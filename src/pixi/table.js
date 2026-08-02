@@ -1094,6 +1094,12 @@ export function createTable(app, { t, onPot } = {}) {
   //   命中 best5 的牌取消暗罩；winner 牌型转金(cat>=STRAIGHT) + 金环。
   function playShowdown(participants, opts = {}) {
     clearShowdown()
+    // 亮牌时隐藏 SB/BB 标记:标记挂 iconLayer(座位层之上)、又贴头像左侧,
+    //   会盖在他人摊牌的大牌上(用户反馈 2026-08-02)。下一手 postBlinds→setIcon 自动恢复显示。
+    for (const kind of ['sb', 'bb']) {
+      const it = icons.get(kind)
+      if (it && it.sp) it.sp.visible = false
+    }
     const token = ++showToken
     const stagger = opts.stagger != null ? opts.stagger : RESULT_ROUND
     participants.forEach((pt, idx) => {
@@ -2225,6 +2231,7 @@ export function createTable(app, { t, onPot } = {}) {
       it = { sp, nodeId, mt: null }
       icons.set(kind, it)
     }
+    it.sp.visible = true // 摊牌时被隐藏(playShowdown)后,新一手重新放置即恢复
     const target = iconTargetFor(kind, view)
     if (animate && (it.sp.x || it.sp.y)) {
       it.mt = { t: 0, dur: DEALER_MOVE_DUR, from: { x: it.sp.x, y: it.sp.y } }
@@ -2706,6 +2713,12 @@ export function createTable(app, { t, onPot } = {}) {
     if (showFlips.length) {
       for (let i = showFlips.length - 1; i >= 0; i--) {
         const fl = showFlips[i]
+        // 座位在翻面途中被清(结算期站起/离座 → container.destroy 连带销毁牌 sprite)
+        //   → 已销毁 sprite 的 scale/transform 为 null,直接丢弃这条动画
+        if (!fl.sp || fl.sp._destroyed || !fl.sp.transform) {
+          showFlips.splice(i, 1)
+          continue
+        }
         fl.t += dt
         if (fl.t < OPEN_CARD) {
           fl.sp.scale.x = Math.max(0.01, fl.baseSX * (1 - (fl.t / OPEN_CARD) * 0.99))

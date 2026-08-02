@@ -314,6 +314,14 @@ function handleGameEvent(type, data) {
         if (type === 'recvPeriodSettle' && data.userId === game.user.userId) {
           openPeriodSettle(data)
         }
+        // 自己真正站起(含牌局中申请、局末生效):同步余额 + 结算提示
+        if (type === 'recvLeave' && data.userID === game.user.userId) {
+          if (data.balance != null) game.user.chips = data.balance
+          if (data.refund != null) {
+            const pf = data.profit || 0
+            errMsg.value = `已站起:本周期盈亏 ${pf >= 0 ? '+' : ''}${formatKNotation(pf)},退回钱包 ${formatKNotation(data.refund)}`
+          }
+        }
         const P = pixiStage.value
         const m = applyEvent(tableModel, type, data)
 
@@ -1170,7 +1178,9 @@ function onRunDealTest({ count, selfSeated }) {
     pixiStage.value && pixiStage.value.playDeal(targets, revealSeatCard)
   })
 }
-// 站起围观：已入座 → REQ_GAME_SEND_SEAT_ACTION(18) action=2，本地清 Hero 座，继续观战不断连。
+// 站起围观(对齐扯旋):
+//   牌局中未弃牌 → 后端回 pending,这手继续打完,局末 PLAYER_STAND 才清座(recvLeave 驱动);
+//   已弃牌/局间 → 立即站起,PLAYER_STAND 随后清座。两种都不在这里本地强清。
 async function onStandUpSpectate() {
   showMenu.value = false
   const tgt = game.enterTarget
@@ -1180,6 +1190,10 @@ async function onStandUpSpectate() {
     const resp = await standUpSeat({ seatID: sid, roomId: tgt.roomId })
     if (resp.status !== 0) {
       errMsg.value = `站起失败(status=${resp.status})`
+      return
+    }
+    if (resp.pending) {
+      errMsg.value = resp.msg || '本手结束后自动站起'
       return
     }
     standUpHeroLocal(sid)

@@ -10,11 +10,13 @@ import { cardStrToId } from './tableModel.js'
 export const MSG = {
   LOGIN: 401, ROOM_LIST: 402, CREATE_ROOM: 403, ENTER_ROOM: 404, LEAVE_ROOM: 405,
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
+  MY_RECORDS: 411,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
   SETTLE: 464, PLAYER_STAND: 465, SNAPSHOT_RES: 466, PLAYER_LEAVE: 467,
-  PERIOD_SETTLE: 468, ROOM_STATE: 469, ERROR: 499,
+  PERIOD_SETTLE: 468, ROOM_STATE: 469, STAND_UP_RES: 470, MY_RECORDS_RES: 471,
+  ERROR: 499,
 }
 
 let _sock = null
@@ -39,7 +41,12 @@ async function ensureSocket() {
 async function doLogin(sock) {
   const data = _cred.token ? { token: _cred.token, nickname: _cred.nickname } : { guest: _cred.nickname }
   const res = await sock.request(MSG.LOGIN, data, { resType: MSG.LOGIN_RES })
-  _login = { userId: res.data.userId, nickname: res.data.nickname, balance: res.data.balance ?? 0 }
+  _login = {
+    userId: res.data.userId,
+    nickname: res.data.nickname,
+    balance: res.data.balance ?? 0,
+    diamond: res.data.diamond ?? 0, // 平台公用钻石(主服账号才有,游客恒 0)
+  }
   return _login
 }
 
@@ -238,9 +245,17 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
   on(MSG.PLAYER_SIT, (d) => emit('recvSeatDown', {
     seatID: d.seat, userID: d.userId, nick: d.nickname || '', headPic: '', chips: d.stack ?? 0, sex: 0,
   }))
-  on(MSG.PLAYER_STAND, (d) => emit('recvLeave', {
-    seatID: d.seat, userID: d.userId, reason: d.reason, refund: d.refund, balance: d.balance,
-  }))
+  on(MSG.PLAYER_STAND, (d) => {
+    // 自己真正站起(含 pending 局末生效):同步钱包余额 + 清本地座位
+    if (d.userId === me) {
+      if (_login && d.balance != null) _login.balance = d.balance
+      if (_room) _room.mySeat = -1
+    }
+    emit('recvLeave', {
+      seatID: d.seat, userID: d.userId, reason: d.reason, refund: d.refund, balance: d.balance,
+      profit: d.profit, rake: d.rake, bringIn: d.bringIn,
+    })
+  })
   on(MSG.BUY_IN_RES, (d) => emit('recvBuyin', {
     userID: d.userId, amount: d.amount, applied: !!d.applied, stackAbs: d.stack, balance: d.balance,
   }))
@@ -345,23 +360,29 @@ export async function addChips({ seatID, anteNumber, roomId }) {
   return p
 }
 
-/** 站起(留在房间观战)。返回 {status:0} */
+/**
+ * 站起(留在房间观战)。后端即时回执 STAND_UP_RES:
+ *   pending=true → 牌局中申请,这手打完自动站起(座位保留,PLAYER_STAND 局末才来);
+ *   pending=false → 已立即站起(PLAYER_STAND 广播随后清座)。
+ * 返回 {status:0, pending, msg}。
+ */
 export async function standUpSeat({ seatID, roomId }) {
   void seatID
   const sock = await ensureSocket()
-  const me = _login.userId
   const p = observeResult((ok) => [
-    sock.on(MSG.PLAYER_STAND, (d) => {
-      if (d.userId === me) {
-        if (_login) _login.balance = d.balance ?? _login.balance
-        ok({ status: 0, refund: d.refund, balance: d.balance })
-      }
-    }),
+    sock.on(MSG.STAND_UP_RES, (d) => ok({ status: 0, pending: !!(d && d.pending), msg: (d && d.msg) || '' })),
   ])
   sock.send(MSG.STAND_UP, {}, roomId)
   const r = await p
-  if (_room) _room.mySeat = -1
+  if (_room && !r.pending) _room.mySeat = -1
   return r
+}
+
+/** 我的战绩:{records:[周期/站起结算列表], stats:{sessions,totalProfit,totalHands,...}} */
+export async function myRecordsFlow(limit = 20) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.MY_RECORDS, { limit }, { resType: MSG.MY_RECORDS_RES })
+  return res.data || { records: [], stats: {} }
 }
 
 /** 离开房间(先站起结算再离开,由后端处理)。 */

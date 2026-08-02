@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
-import { roomListFlow, createRoomFlow, getLoginInfo } from '../net/session.js'
+import { roomListFlow, createRoomFlow, getLoginInfo, myRecordsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
 
@@ -102,6 +102,32 @@ async function onCreate() {
   }
 }
 
+// ===== 我的战绩(周期/站起结算记录,411/471) =====
+const showRecords = ref(false)
+const recLoading = ref(false)
+const recData = ref({ records: [], stats: {} })
+const REASON_TXT = { period: '周期结算', standup: '站起', leave: '离房', buyin_timeout: '超时站起' }
+async function openRecords() {
+  showRecords.value = true
+  recLoading.value = true
+  try {
+    recData.value = await myRecordsFlow(30)
+  } catch (e) {
+    errMsg.value = e.message || '战绩加载失败'
+  } finally {
+    recLoading.value = false
+  }
+}
+function recTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p2 = (n) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`
+}
+function signed(n) {
+  return (n > 0 ? '+' : '') + formatKNotation(n || 0)
+}
+
 const activeTab = ref('hall')
 function onTab(key) {
   if (key === 'friend') router.push('/friend')
@@ -124,6 +150,7 @@ function onTab(key) {
         </div>
       </div>
       <div class="top-icons">
+        <button class="ic rec" @click="openRecords">战绩</button>
         <button class="ic" :disabled="loading" @click="loadRooms">&#8635;</button>
       </div>
     </div>
@@ -166,6 +193,36 @@ function onTab(key) {
       </div>
       <div v-if="!loading && tables.length === 0" class="hall-empty">{{ t('hall.emptyCreate') }}</div>
       <div v-if="errMsg" class="hall-err">{{ errMsg }}</div>
+    </div>
+
+    <!-- 我的战绩弹窗 -->
+    <div v-if="showRecords" class="create-mask" @click.self="showRecords = false">
+      <div class="create-box rec-box">
+        <div class="c-title">我的战绩</div>
+        <div v-if="recLoading" class="rec-loading">加载中…</div>
+        <template v-else>
+          <div class="rec-stats" v-if="recData.stats && recData.stats.sessions > 0">
+            <div class="rs-item"><span>场次</span><b>{{ recData.stats.sessions }}</b></div>
+            <div class="rs-item"><span>总手数</span><b>{{ recData.stats.totalHands }}</b></div>
+            <div class="rs-item">
+              <span>总盈亏</span>
+              <b :class="{ win: recData.stats.totalProfit > 0, lose: recData.stats.totalProfit < 0 }">
+                {{ signed(recData.stats.totalProfit) }}
+              </b>
+            </div>
+          </div>
+          <div class="rec-list">
+            <div class="rec-item" v-for="(r, i) in recData.records" :key="i">
+              <div class="ri-l">
+                <div class="ri-name">{{ r.roomName || '#' + r.roomId }}</div>
+                <div class="ri-sub">{{ REASON_TXT[r.reason] || r.reason }} · {{ r.handCount }}手({{ r.winCount }}胜{{ r.loseCount }}负) · {{ recTime(r.time) }}</div>
+              </div>
+              <div class="ri-r" :class="{ win: r.profit > 0, lose: r.profit < 0 }">{{ signed(r.profit) }}</div>
+            </div>
+            <div v-if="recData.records.length === 0" class="rec-empty">还没有完赛记录,打一局吧</div>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- 创建房间弹窗 -->
@@ -533,5 +590,74 @@ function onTab(key) {
 }
 .c-confirm:disabled {
   opacity: 0.6;
+}
+
+/* 我的战绩 */
+.ic.rec {
+  width: auto;
+  padding: 0 calc(28px * var(--s));
+  border-radius: calc(36px * var(--s));
+  font-size: calc(30px * var(--s));
+  color: #08a88c;
+  font-weight: 600;
+}
+.rec-box {
+  max-height: 78%;
+}
+.rec-loading,
+.rec-empty {
+  text-align: center;
+  color: #9a9a9c;
+  font-size: calc(34px * var(--s));
+  padding: calc(60px * var(--s)) 0;
+}
+.rec-stats {
+  display: flex;
+  gap: calc(16px * var(--s));
+  margin: calc(20px * var(--s)) 0 calc(28px * var(--s));
+}
+.rs-item {
+  flex: 1;
+  background: #f7f7f8;
+  border-radius: calc(16px * var(--s));
+  padding: calc(20px * var(--s)) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8px * var(--s));
+}
+.rs-item span {
+  font-size: calc(28px * var(--s));
+  color: #999;
+}
+.rs-item b {
+  font-size: calc(38px * var(--s));
+}
+.rec-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(24px * var(--s)) calc(8px * var(--s));
+  border-bottom: 1px solid #f0f0f0;
+}
+.ri-name {
+  font-size: calc(36px * var(--s));
+  font-weight: 600;
+}
+.ri-sub {
+  font-size: calc(28px * var(--s));
+  color: #9a9a9c;
+  margin-top: calc(6px * var(--s));
+}
+.ri-r {
+  font-size: calc(40px * var(--s));
+  font-weight: 700;
+  color: #666;
+}
+.win {
+  color: #0aa06e;
+}
+.lose {
+  color: #e05a5a;
 }
 </style>
