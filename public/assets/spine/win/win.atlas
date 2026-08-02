@@ -1,0 +1,138 @@
+win.png
+size: 1024, 512
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+Pingju/Pingju_dk
+  rotate: false
+  xy: 2, 179
+  size: 436, 132
+  orig: 436, 132
+  offset: 0, 0
+  index: -1
+Pingju/Pingju_zi
+  rotate: false
+  xy: 440, 164
+  size: 214, 74
+  orig: 214, 74
+  offset: 0, 0
+  index: -1
+Pingju/Pingju_zi_cn
+  rotate: true
+  xy: 631, 33
+  size: 129, 79
+  orig: 133, 81
+  offset: 2, 2
+  index: -1
+Shule/Shule_01
+  rotate: false
+  xy: 712, 59
+  size: 102, 116
+  orig: 128, 128
+  offset: 13, 5
+  index: -1
+Shule/Shule_dk
+  rotate: false
+  xy: 498, 374
+  size: 436, 132
+  orig: 436, 132
+  offset: 0, 0
+  index: -1
+Shule/Shule_zi
+  rotate: true
+  xy: 936, 259
+  size: 247, 61
+  orig: 252, 63
+  offset: 3, 2
+  index: -1
+Shule/Shule_zi_cn
+  rotate: false
+  xy: 440, 83
+  size: 189, 79
+  orig: 196, 81
+  offset: 3, 2
+  index: -1
+Yingle/Ks_Tx
+  rotate: false
+  xy: 2, 12
+  size: 72, 31
+  orig: 100, 42
+  offset: 14, 5
+  index: -1
+Yingle/Ls_xx
+  rotate: false
+  xy: 816, 9
+  size: 77, 77
+  orig: 100, 100
+  offset: 12, 11
+  index: -1
+Yingle/Tspx_hs_Fk
+  rotate: false
+  xy: 895, 11
+  size: 72, 80
+  orig: 80, 90
+  offset: 2, 6
+  index: -1
+Yingle/Tspx_hs_Ht
+  rotate: false
+  xy: 893, 93
+  size: 75, 85
+  orig: 80, 90
+  offset: 1, 2
+  index: -1
+Yingle/Tspx_hs_Hx
+  rotate: true
+  xy: 936, 180
+  size: 77, 86
+  orig: 80, 90
+  offset: 3, 4
+  index: -1
+Yingle/Tspx_hs_Mh
+  rotate: false
+  xy: 816, 88
+  size: 75, 87
+  orig: 80, 90
+  offset: 4, 2
+  index: -1
+Yingle/Yingle_Yingle_dk
+  rotate: false
+  xy: 2, 45
+  size: 436, 132
+  orig: 436, 132
+  offset: 0, 0
+  index: -1
+Yingle/Yingle_dk1_0
+  rotate: false
+  xy: 498, 240
+  size: 436, 132
+  orig: 436, 132
+  offset: 0, 0
+  index: -1
+Yingle/Yingle_dk_0
+  rotate: false
+  xy: 2, 313
+  size: 494, 193
+  orig: 502, 198
+  offset: 4, 3
+  index: -1
+Yingle/Yingle_zi
+  rotate: false
+  xy: 656, 177
+  size: 224, 61
+  orig: 229, 63
+  offset: 3, 2
+  index: -1
+Yingle/Yingle_zi_cn
+  rotate: false
+  xy: 440, 2
+  size: 189, 79
+  orig: 196, 82
+  offset: 3, 3
+  index: -1
+Yingle/dian1
+  rotate: false
+  xy: 440, 293
+  size: 18, 18
+  orig: 22, 22
+  offset: 2, 2
+  index: -1

@@ -1,0 +1,10 @@
+[
+  {
+    "__type__": "dragonBones.DragonBonesAtlasAsset",
+    "_name": "xihongshi_2_tex",
+    "_atlasJson": "{\"width\":256,\"imagePath\":\"xihongshi_2_tex.png\",\"height\":128,\"name\":\"xihongshi_2\",\"SubTexture\":[{\"y\":1,\"frameX\":-8,\"frameHeight\":112,\"frameY\":-4,\"width\":86,\"frameWidth\":104,\"height\":108,\"name\":\"003\",\"x\":1},{\"width\":1,\"y\":1,\"height\":1,\"name\":\"组-4-拷贝1\",\"x\":243},{\"y\":1,\"frameX\":-6,\"frameHeight\":112,\"frameY\":-31,\"width\":74,\"frameWidth\":104,\"height\":59,\"name\":\"005\",\"x\":167},{\"y\":1,\"frameX\":-15,\"frameHeight\":112,\"frameY\":-24,\"width\":76,\"frameWidth\":104,\"height\":69,\"name\":\"004\",\"x\":89}]}",
+    "_texture": {
+      "__uuid__": "66S2u/B5pDa46WynFB+cB9"
+    }
+  }
+]

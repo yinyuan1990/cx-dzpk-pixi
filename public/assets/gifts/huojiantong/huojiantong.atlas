@@ -1,0 +1,116 @@
+﻿huojiantong.png
+size: 1024,1024
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+01_01
+  rotate: false
+  xy: 358, 684
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_02
+  rotate: false
+  xy: 616, 684
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_04
+  rotate: false
+  xy: 154, 389
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_05
+  rotate: false
+  xy: 412, 426
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_06
+  rotate: false
+  xy: 670, 426
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_08
+  rotate: false
+  xy: 2, 2
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_09
+  rotate: false
+  xy: 412, 168
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_11
+  rotate: false
+  xy: 670, 168
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+baozha1
+  rotate: true
+  xy: 260, 215
+  size: 172, 150
+  orig: 172, 150
+  offset: 0, 0
+  index: -1
+baozha2
+  rotate: false
+  xy: 2, 647
+  size: 354, 293
+  orig: 354, 293
+  offset: 0, 0
+  index: -1
+huojiantong
+  rotate: false
+  xy: 2, 260
+  size: 150, 385
+  orig: 150, 385
+  offset: 0, 0
+  index: -1
+huoyan
+  rotate: false
+  xy: 874, 725
+  size: 68, 215
+  orig: 68, 215
+  offset: 0, 0
+  index: -1
+
+huojiantong2.png
+size: 1024,512
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+01_13
+  rotate: false
+  xy: 2, 2
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_14
+  rotate: false
+  xy: 260, 2
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+01_16
+  rotate: false
+  xy: 518, 2
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1

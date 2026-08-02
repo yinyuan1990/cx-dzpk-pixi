@@ -1,0 +1,10 @@
+[
+  {
+    "__type__": "dragonBones.DragonBonesAtlasAsset",
+    "_name": "zhuaji_tex",
+    "_atlasJson": "{\"SubTexture\":[{\"frameX\":-19,\"frameHeight\":141,\"y\":123,\"frameY\":-10,\"frameWidth\":144,\"width\":119,\"height\":122,\"name\":\"_16\",\"x\":1},{\"frameX\":-5,\"frameHeight\":114,\"y\":128,\"frameY\":0,\"frameWidth\":112,\"width\":103,\"height\":112,\"name\":\"cock_02\",\"x\":122},{\"frameX\":-2,\"frameHeight\":129,\"y\":1,\"frameY\":-1,\"frameWidth\":117,\"width\":114,\"height\":120,\"name\":\"_08\",\"x\":383},{\"frameX\":0,\"frameHeight\":127,\"y\":1,\"frameY\":-6,\"frameWidth\":143,\"width\":140,\"height\":120,\"name\":\"_12\",\"x\":1},{\"frameX\":-19,\"frameHeight\":134,\"y\":123,\"frameY\":-8,\"frameWidth\":132,\"width\":113,\"height\":120,\"name\":\"_10\",\"x\":383},{\"frameX\":-11,\"frameHeight\":121,\"y\":1,\"frameY\":0,\"frameWidth\":150,\"width\":119,\"height\":121,\"name\":\"_04\",\"x\":262},{\"frameX\":-5,\"frameHeight\":175,\"y\":124,\"frameY\":-14,\"frameWidth\":117,\"width\":112,\"height\":120,\"name\":\"_14\",\"x\":262},{\"frameX\":-3,\"frameHeight\":114,\"y\":245,\"frameY\":-2,\"frameWidth\":125,\"width\":117,\"height\":112,\"name\":\"_03\",\"x\":376},{\"frameX\":-13,\"frameHeight\":148,\"y\":1,\"frameY\":-6,\"frameWidth\":138,\"width\":117,\"height\":125,\"name\":\"_18\",\"x\":143},{\"frameX\":-16,\"frameHeight\":50,\"y\":128,\"frameY\":-14,\"frameWidth\":51,\"width\":27,\"height\":29,\"name\":\"_24\",\"x\":227},{\"frameX\":-17,\"frameHeight\":107,\"y\":159,\"frameY\":-14,\"frameWidth\":53,\"width\":22,\"height\":20,\"name\":\"_25\",\"x\":227},{\"frameX\":0,\"frameHeight\":79,\"y\":242,\"frameY\":-1,\"frameWidth\":103,\"width\":103,\"height\":74,\"name\":\"cock_01\",\"x\":122},{\"width\":19,\"y\":200,\"height\":17,\"name\":\"cock_05\",\"x\":227},{\"width\":19,\"y\":181,\"height\":17,\"name\":\"cock_03\",\"x\":227}],\"width\":512,\"height\":512,\"name\":\"zhuaji\",\"imagePath\":\"zhuaji_tex.png\"}",
+    "_texture": {
+      "__uuid__": "35ICGf+GdEWKzV9k05Lm6r"
+    }
+  }
+]

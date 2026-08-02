@@ -1,0 +1,19 @@
+﻿motou.png
+size: 512,512
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+damuzhi
+  rotate: false
+  xy: 2, 2
+  size: 161, 122
+  orig: 161, 122
+  offset: 0, 0
+  index: -1
+shouzhang
+  rotate: false
+  xy: 2, 126
+  size: 393, 264
+  orig: 393, 264
+  offset: 0, 0
+  index: -1

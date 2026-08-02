@@ -1,0 +1,96 @@
+﻿buyu.png
+size: 1024,512
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+biyan
+  rotate: false
+  xy: 976, 460
+  size: 46, 40
+  orig: 46, 40
+  offset: 0, 0
+  index: -1
+shenti
+  rotate: false
+  xy: 430, 18
+  size: 264, 183
+  orig: 264, 183
+  offset: 0, 0
+  index: -1
+wang02_bianyuan
+  rotate: false
+  xy: 430, 203
+  size: 475, 297
+  orig: 475, 297
+  offset: 0, 0
+  index: -1
+wang02_neiceng01
+  rotate: false
+  xy: 2, 2
+  size: 329, 142
+  orig: 329, 142
+  offset: 0, 0
+  index: -1
+wang02_neiceng02
+  rotate: false
+  xy: 2, 146
+  size: 426, 354
+  orig: 426, 354
+  offset: 0, 0
+  index: -1
+weiba
+  rotate: false
+  xy: 696, 60
+  size: 130, 141
+  orig: 130, 141
+  offset: 0, 0
+  index: -1
+yanjing
+  rotate: false
+  xy: 696, 18
+  size: 40, 40
+  orig: 40, 40
+  offset: 0, 0
+  index: -1
+yanpi
+  rotate: false
+  xy: 976, 437
+  size: 46, 21
+  orig: 46, 21
+  offset: 0, 0
+  index: -1
+yuqi1
+  rotate: false
+  xy: 333, 95
+  size: 86, 49
+  orig: 86, 49
+  offset: 0, 0
+  index: -1
+yuqi2
+  rotate: false
+  xy: 828, 146
+  size: 71, 55
+  orig: 71, 55
+  offset: 0, 0
+  index: -1
+yuqi3
+  rotate: false
+  xy: 907, 370
+  size: 55, 50
+  orig: 55, 50
+  offset: 0, 0
+  index: -1
+yushou
+  rotate: false
+  xy: 907, 422
+  size: 67, 78
+  orig: 67, 78
+  offset: 0, 0
+  index: -1
+yuzui
+  rotate: false
+  xy: 333, 54
+  size: 24, 39
+  orig: 24, 39
+  offset: 0, 0
+  index: -1

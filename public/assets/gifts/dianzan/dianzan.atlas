@@ -1,0 +1,19 @@
+﻿dianzan.png
+size: 1024,512
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+shou1
+  rotate: false
+  xy: 280, 77
+  size: 276, 277
+  orig: 276, 277
+  offset: 0, 0
+  index: -1
+shou2
+  rotate: false
+  xy: 2, 2
+  size: 276, 352
+  orig: 276, 352
+  offset: 0, 0
+  index: -1

@@ -1,0 +1,12 @@
+loading-poker.png
+size: 218,279
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+1
+  rotate: false
+  xy: 0, 0
+  size: 218, 279
+  orig: 237, 299
+  offset: 10, 11
+  index: -1

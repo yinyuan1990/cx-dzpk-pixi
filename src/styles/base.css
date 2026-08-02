@@ -1,0 +1,60 @@
+/* 筹码/身家数字字体 = Cocos 真值 PKW-Chip（chouma_text 用 Medium、money_text 用 Regular，
+   逆向 Seat.prefab _N$file → PKW-Chip-Medium.ttf / PKW-Chip-Regular.ttf）。 */
+@font-face {
+  font-family: 'PKW-Chip';
+  src: url('/assets/fonts/PKW-Chip-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: block;
+}
+@font-face {
+  font-family: 'PKW-Chip';
+  src: url('/assets/fonts/PKW-Chip-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: block;
+}
+
+:root {
+  --s: 1; /* 设计分辨率→屏幕 的缩放比，由 useDesignScale 动态写入 */
+  /* 齐刘海/安全区：刘海屏顶部状态栏 + 底部 home 指示条的安全内边距。
+     需配合 index.html 的 viewport-fit=cover；非刘海屏 env() 回退 0。
+     页面顶部栏 +var(--sat)、底部栏/滚动容器底部 +var(--sab)。可被测试覆写。 */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  color: #e6ebf2;
+  user-select: none;
+}
+
+img {
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* 适配根：铺满视口，作为所有页面的定位基准（等价 Cocos Canvas 可视区） */
+.stage-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* 设计 px → 实际 px 的工具：宽高/偏移统一乘 --s */
+/* 用法：style="--w:553; --h:851"  +  class 里 width: calc(var(--w) * 1px * var(--s)) */

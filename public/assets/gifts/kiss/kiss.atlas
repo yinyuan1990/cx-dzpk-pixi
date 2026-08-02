@@ -1,0 +1,26 @@
+﻿kiss.png
+size: 1024,256
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+aixin
+  rotate: false
+  xy: 595, 47
+  size: 151, 129
+  orig: 151, 129
+  offset: 0, 0
+  index: -1
+zuiba1
+  rotate: false
+  xy: 303, 85
+  size: 290, 91
+  orig: 290, 91
+  offset: 0, 0
+  index: -1
+zuiba2
+  rotate: false
+  xy: 2, 2
+  size: 299, 174
+  orig: 299, 174
+  offset: 0, 0
+  index: -1
