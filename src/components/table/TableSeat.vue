@@ -104,6 +104,15 @@ const avatarStyle = computed(() => {
       <!-- extension points (future, no rotation change needed):
            bet-chips (toward pot) / timer-ring (CommonCircularProgressBar) / status-tag -->
     </template>
+
+    <!-- 状态徽标(暂离/断线):独立于 v-if 链,Pixi 画座位(pixiMode)时也要盖在头像上 -->
+    <div
+      v-if="player && (player.sittingOut || player.offline)"
+      class="seat-badge"
+      :class="{ off: player.offline && !player.sittingOut }"
+    >
+      {{ player.sittingOut ? '暂离' : '断线' }}
+    </div>
   </button>
 </template>
 
@@ -124,6 +133,25 @@ const avatarStyle = computed(() => {
   width: calc(144px * var(--s));
   height: calc(144px * var(--s));
   object-fit: contain;
+}
+
+/* 暂离/断线徽标:盖在头像正中,Pixi 座位层之上 */
+.seat-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  padding: calc(6px * var(--s)) calc(16px * var(--s));
+  border-radius: calc(999px * var(--s));
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffd76a;
+  font-size: calc(24px * var(--s));
+  white-space: nowrap;
+  pointer-events: none;
+}
+.seat-badge.off {
+  color: #ff8a8a;
 }
 
 /* avatar = rounded-square (squircle), like the seat frame (Cocos masks head to seat shape) */

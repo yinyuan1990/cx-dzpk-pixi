@@ -5,6 +5,7 @@ import {
   clubListFlow, clubMembersFlow, clubApplyListFlow, clubReviewFlow,
   clubSetRoleFlow, clubKickFlow, clubQuitFlow, clubDissolveFlow,
   roomListFlow, createRoomFlow, getLoginInfo,
+  clubScoreOpFlow, clubScoreLogsFlow,
 } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
@@ -171,6 +172,56 @@ async function review(r, approve) {
   }
 }
 
+// ===== 俱乐部积分(每俱乐部独立一本账,对齐扯旋;带入游戏桌就用它) =====
+const myScore = computed(() => {
+  const m = members.value.find((x) => Number(x.userId) === Number(me.userId))
+  return m ? m.score || 0 : 0
+})
+
+// 积分操作弹层:mode = ownerAdd 增发 / ownerBurn 核销 / distribute 上分 / collect 下分 / transfer 赠送
+const scoreOp = ref(null) // { mode, target(可空=自己), amount }
+const SCORE_OP_TXT = { ownerAdd: '增发积分', ownerBurn: '核销积分', distribute: '上分', collect: '下分', transfer: '赠送积分' }
+function openScoreOp(mode, target = null) {
+  scoreOp.value = { mode, target, amount: '' }
+}
+async function confirmScoreOp() {
+  const op = scoreOp.value
+  if (!op) return
+  const amount = Math.floor(Number(op.amount))
+  if (!amount || amount <= 0) { toast('请输入正确的积分数量', false); return }
+  try {
+    await clubScoreOpFlow({ clubId, op: op.mode, userId: op.target ? op.target.userId : 0, amount })
+    scoreOp.value = null
+    toast(`${SCORE_OP_TXT[op.mode]}成功`)
+    await loadMembers()
+  } catch (e) {
+    toast(e.message || '操作失败', false)
+  }
+}
+/** 对某成员可执行的积分操作:群主/管理员 → 上分/下分;任何人 → 赠送(不能给自己) */
+function scoreOpsOf(m) {
+  if (m.userId === me.userId) return []
+  const ops = []
+  if (canManage.value) { ops.push('distribute'); ops.push('collect') }
+  ops.push('transfer')
+  return ops
+}
+
+// 积分明细(自己;群主/管理员可查成员)
+const scoreLogs = ref(null) // { title, logs }
+async function openScoreLogs(m = null) {
+  try {
+    const logs = await clubScoreLogsFlow({ clubId, userId: m ? m.userId : 0, limit: 50 })
+    scoreLogs.value = { title: m ? `「${m.nickname}」积分明细` : '我的积分明细', logs }
+  } catch (e) {
+    toast(e.message || '加载明细失败', false)
+  }
+}
+function fmtLogTime(ts) {
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 // ===== 退出 / 解散 =====
 async function onQuit() {
   if (!confirm('确定退出该俱乐部?')) return
@@ -266,6 +317,21 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 
       <!-- 成员 -->
       <template v-else-if="tab === 'members'">
+        <!-- 我的积分卡:带入游戏桌就用它(每俱乐部独立,对齐扯旋) -->
+        <div class="score-card">
+          <div class="sc-left">
+            <div class="sc-label">我的积分(本俱乐部)</div>
+            <div class="sc-value">{{ formatKNotation(myScore) }}</div>
+          </div>
+          <div class="sc-btns">
+            <button class="mop" @click="openScoreLogs()">明细</button>
+            <template v-if="isOwner">
+              <button class="mop ok" @click="openScoreOp('ownerAdd')">增发</button>
+              <button class="mop danger" @click="openScoreOp('ownerBurn')">核销</button>
+            </template>
+          </div>
+        </div>
+
         <div class="mem" v-for="m in members" :key="m.userId">
           <div class="mleft">
             <div class="mname">
@@ -273,9 +339,13 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <span class="role" :class="'r' + m.role">{{ ROLE_TXT[m.role] }}</span>
               <span v-if="m.role === 4" class="rate">{{ m.partnerRate }}%</span>
             </div>
-            <div class="msub">ID {{ m.userId }} · 邀请码 {{ m.inviteCode }}</div>
+            <div class="msub">ID {{ m.userId }} · 邀请码 {{ m.inviteCode }} · 积分 {{ formatKNotation(m.score || 0) }}</div>
           </div>
           <div class="mops">
+            <button v-for="op in scoreOpsOf(m)" :key="'s' + op" class="mop score"
+              @click="openScoreOp(op, m)">{{ SCORE_OP_TXT[op] }}</button>
+            <button v-if="canManage && m.userId !== me.userId" class="mop"
+              @click="openScoreLogs(m)">明细</button>
             <button v-for="op in opsOf(m)" :key="op" class="mop" :class="{ danger: op === 'kick' }"
               @click="doOp(m, op)">{{ OP_TXT[op] }}</button>
           </div>
@@ -333,6 +403,45 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <button class="c-confirm" :disabled="creating" @click="onCreate">
           {{ creating ? '创建中…' : '创建' }}
         </button>
+      </div>
+    </div>
+
+    <!-- 积分操作弹窗(增发/核销/上分/下分/赠送) -->
+    <div v-if="scoreOp" class="create-mask" @click.self="scoreOp = null">
+      <div class="create-box">
+        <div class="c-title">
+          {{ SCORE_OP_TXT[scoreOp.mode] }}<template v-if="scoreOp.target"> · {{ scoreOp.target.nickname }}</template>
+        </div>
+        <div class="c-label">
+          <template v-if="scoreOp.mode === 'ownerAdd'">给自己账上增发积分(凭空造分,只有群主能操作)</template>
+          <template v-else-if="scoreOp.mode === 'ownerBurn'">从自己账上销毁积分(只有群主能操作)</template>
+          <template v-else-if="scoreOp.mode === 'distribute'">从我的积分转给成员(上分)</template>
+          <template v-else-if="scoreOp.mode === 'collect'">从成员积分收回到我账上(下分)</template>
+          <template v-else>从我的积分赠送给对方</template>
+        </div>
+        <input v-model="scoreOp.amount" class="c-input" type="number" min="1" placeholder="积分数量" />
+        <div class="c-label">我的积分:{{ formatKNotation(myScore) }}<template v-if="scoreOp.target"> · 对方积分:{{ formatKNotation(scoreOp.target.score || 0) }}</template></div>
+        <button class="c-confirm" @click="confirmScoreOp">确定</button>
+      </div>
+    </div>
+
+    <!-- 积分明细弹窗(type 对齐扯旋 game_score_log) -->
+    <div v-if="scoreLogs" class="create-mask" @click.self="scoreLogs = null">
+      <div class="create-box">
+        <div class="c-title">{{ scoreLogs.title }}</div>
+        <div v-if="!scoreLogs.logs.length" class="empty">暂无积分流水</div>
+        <div v-for="(lg, i) in scoreLogs.logs" :key="i" class="log-row">
+          <div class="log-left">
+            <div class="log-type">{{ lg.typeName || '积分变动' }}</div>
+            <div class="log-sub">{{ fmtLogTime(lg.time) }}<template v-if="lg.remark"> · {{ lg.remark }}</template></div>
+          </div>
+          <div class="log-right">
+            <div class="log-amt" :class="{ plus: lg.amount > 0, minus: lg.amount < 0 }">
+              {{ lg.amount > 0 ? '+' : '' }}{{ formatKNotation(lg.amount) }}
+            </div>
+            <div class="log-after">余 {{ formatKNotation(lg.after) }}</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -602,6 +711,70 @@ onBeforeUnmount(() => clearInterval(pollTimer))
   color: #9a9a9c;
   font-size: calc(32px * var(--s));
   padding: calc(100px * var(--s)) 0;
+}
+
+/* 我的积分卡 */
+.score-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(16px * var(--s));
+  background: linear-gradient(90deg, #eafcf7, #f2fbff);
+  border: 1px solid #bfeee2;
+  border-radius: calc(20px * var(--s));
+  padding: calc(26px * var(--s)) calc(32px * var(--s));
+  margin-bottom: calc(20px * var(--s));
+}
+.sc-label {
+  font-size: calc(26px * var(--s));
+  color: #6d8a83;
+}
+.sc-value {
+  font-size: calc(52px * var(--s));
+  font-weight: 700;
+  color: #08a88c;
+  margin-top: calc(6px * var(--s));
+}
+.sc-btns {
+  display: flex;
+  gap: calc(12px * var(--s));
+}
+.mop.score {
+  border-color: #bfe0f5;
+  background: #f0f8ff;
+  color: #3d7fd8;
+}
+
+/* 积分明细行 */
+.log-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(20px * var(--s)) calc(8px * var(--s));
+  border-bottom: 1px solid #f0f0f0;
+}
+.log-type {
+  font-size: calc(32px * var(--s));
+  font-weight: 600;
+}
+.log-sub {
+  font-size: calc(24px * var(--s));
+  color: #9a9a9c;
+  margin-top: calc(6px * var(--s));
+}
+.log-right {
+  text-align: right;
+}
+.log-amt {
+  font-size: calc(36px * var(--s));
+  font-weight: 700;
+}
+.log-amt.plus { color: #08a88c; }
+.log-amt.minus { color: #e05a5a; }
+.log-after {
+  font-size: calc(24px * var(--s));
+  color: #9a9a9c;
+  margin-top: calc(4px * var(--s));
 }
 .danger-zone {
   margin-top: calc(40px * var(--s));

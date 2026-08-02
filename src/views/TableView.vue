@@ -30,7 +30,7 @@ import { playSound } from '../utils/sound'
 import { useSeatRotation } from '../composables/useSeatRotation'
 import { useTableBackground } from '../composables/useTableBackground'
 import { useGameStore } from '../stores/game.js'
-import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy } from '../net/session.js'
+import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy, seatReserveLeave, seatReserveResume, realtimeStatsFlow, dismissRoomFlow } from '../net/session.js'
 import { mapSnapshot, applyEvent, mapBoard, debugServerCard } from '../net/tableModel.js'
 import { formatKNotation } from '../utils/format'
 import { CARD_VALUES } from '../config/cards'
@@ -101,6 +101,28 @@ const buyInBB = computed(() => {
   return bb > 0 ? Math.round(buyInAmount.value / bb) : 0
 })
 const heroSeatId = ref(-1) // 自己座位号（坐下/快照/推送同步；供菜单「站起围观」等响应式判断）
+
+// ===== 边缘功能状态(对齐扯旋):暂离/罚金确认/实时战绩/解散 =====
+const myGrace = ref({ active: false, deadline: 0, leftSecs: 0 }) // 自己的放假倒计时
+let graceTimer = null
+const fineConfirm = ref({ show: false, fine: 0, msg: '' })       // 盈利离桌罚金确认弹窗
+const statsPanel = ref({ show: false, loading: false, players: [] }) // 实时战绩面板
+const isRoomCreator = computed(() => !!(tableModel && tableModel.creatorUserId && tableModel.creatorUserId === game.user.userId))
+
+function startGraceCountdown(deadline) {
+  myGrace.value = { active: true, deadline, leftSecs: Math.max(0, Math.round((deadline - Date.now()) / 1000)) }
+  graceTimer && clearInterval(graceTimer)
+  graceTimer = setInterval(() => {
+    const left = Math.max(0, Math.round((myGrace.value.deadline - Date.now()) / 1000))
+    myGrace.value.leftSecs = left
+    if (left <= 0) stopGraceCountdown()
+  }, 1000)
+}
+function stopGraceCountdown() {
+  graceTimer && clearInterval(graceTimer)
+  graceTimer = null
+  myGrace.value = { active: false, deadline: 0, leftSecs: 0 }
+}
 
 // 进桌加载页（对齐 Cocos loadingJs.preScene）：预加载牌桌资源完成前盖加载页 + 真进度条。
 const tableLoading = ref(true)
@@ -320,10 +342,38 @@ function handleGameEvent(type, data) {
         // 自己真正站起(含牌局中申请、局末生效):同步余额 + 结算提示
         if (type === 'recvLeave' && data.userID === game.user.userId) {
           if (data.balance != null) game.user.chips = data.balance
+          stopGraceCountdown()
           if (data.refund != null) {
             const pf = data.profit || 0
-            errMsg.value = `已站起:本周期盈亏 ${pf >= 0 ? '+' : ''}${formatKNotation(pf)},退回钱包 ${formatKNotation(data.refund)}`
+            const fineTip = data.fine > 0 ? `,扣罚金 ${formatKNotation(data.fine)}` : ''
+            errMsg.value = `已站起:本周期盈亏 ${pf >= 0 ? '+' : ''}${formatKNotation(pf)}${fineTip},退回 ${formatKNotation(data.refund)}`
           }
+        }
+        // 留座暂离状态机(对齐扯旋282):自己 → 倒计时横幅;广播 → applyEvent 刷座位徽标
+        if (type === 'recvGrace') {
+          if (data.userId === game.user.userId) {
+            if (data.state === 'ON_LEAVE') startGraceCountdown(data.deadline || 0)
+            else if (data.state === 'NONE') stopGraceCountdown()
+            else if (data.state === 'PENDING') errMsg.value = data.msg || '弃牌或本手结束后自动暂离'
+            else if (data.state === 'SEAT_LOCKED') { stopGraceCountdown(); errMsg.value = '暂离超时已自动站起,座位为你保留一段时间' }
+          }
+        }
+        // 罚金广播(对齐扯旋284):提示条展示,不进模型
+        if (type === 'recvFine') {
+          const who = data.userId === game.user.userId ? '你' : `玩家${data.userId}`
+          errMsg.value = `${who}${data.kind === 'RUN_AWAY' ? '离线过久离桌' : '盈利提前离桌'},罚金 ${formatKNotation(data.amount)}`
+          return
+        }
+        // 牌局被解散(创建者/管理/后台):提示后回大厅
+        if (type === 'recvDismissed') {
+          errMsg.value = '牌局已被解散'
+          setTimeout(() => onLeaveRoom(), 1500)
+          return
+        }
+        // 群主钻石不足:牌局暂停警告
+        if (type === 'recvDiamondWarning') {
+          errMsg.value = data.msg || '群主钻石不足,牌局暂停'
+          return
         }
         const P = pixiStage.value
         const m = applyEvent(tableModel, type, data)
@@ -1235,13 +1285,18 @@ function onRunDealTest({ count, selfSeated }) {
 // 站起围观(对齐扯旋):
 //   牌局中未弃牌 → 后端回 pending,这手继续打完,局末 PLAYER_STAND 才清座(recvLeave 驱动);
 //   已弃牌/局间 → 立即站起,PLAYER_STAND 随后清座。两种都不在这里本地强清。
-async function onStandUpSpectate() {
+async function onStandUpSpectate(confirmFine = false) {
   showMenu.value = false
   const tgt = game.enterTarget
   const sid = heroSeatId.value
   if (!spectating.value || sid < 0 || !tgt) return
   try {
-    const resp = await standUpSeat({ seatID: sid, roomId: tgt.roomId })
+    const resp = await standUpSeat({ seatID: sid, roomId: tgt.roomId, confirmFine })
+    // 盈利离桌罚金报价(对齐扯旋 ack 92):弹确认,确认后带 confirmFine 重发
+    if (resp.needConfirm) {
+      fineConfirm.value = { show: true, fine: resp.fine || 0, msg: resp.msg || '' }
+      return
+    }
     if (resp.status !== 0) {
       errMsg.value = `站起失败(status=${resp.status})`
       return
@@ -1255,12 +1310,55 @@ async function onStandUpSpectate() {
     errMsg.value = e.message || '站起失败'
   }
 }
+function onFineConfirm() {
+  fineConfirm.value.show = false
+  onStandUpSpectate(true)
+}
+
+// 留座暂离(放假):牌局中未弃牌先 PENDING,弃牌/局末生效;结果走 recvGrace 事件
+async function onSeatReserveLeave() {
+  showMenu.value = false
+  const tgt = game.enterTarget
+  if (!spectating.value || heroSeatId.value < 0 || !tgt) return
+  try { await seatReserveLeave(tgt.roomId) } catch (e) { errMsg.value = e.message || '暂离失败' }
+}
+async function onSeatReserveResume() {
+  const tgt = game.enterTarget
+  if (!tgt) return
+  try { await seatReserveResume(tgt.roomId) } catch (e) { errMsg.value = e.message || '回座失败' }
+}
+
+// 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏
+async function onOpenStats() {
+  showMenu.value = false
+  const tgt = game.enterTarget
+  if (!tgt) return
+  statsPanel.value = { show: true, loading: true, players: [] }
+  try {
+    const d = await realtimeStatsFlow(tgt.roomId)
+    statsPanel.value = { show: true, loading: false, players: (d.players || []).sort((a, b) => b.profit - a.profit) }
+  } catch (e) {
+    statsPanel.value.show = false
+    errMsg.value = e.message || '获取战绩失败'
+  }
+}
+
+// 解散牌局(创建者/俱乐部管理):全房收 recvDismissed 回大厅
+async function onDismissRoom() {
+  showMenu.value = false
+  const tgt = game.enterTarget
+  if (!tgt) return
+  try { await dismissRoomFlow(tgt.roomId) } catch (e) { errMsg.value = e.message || '解散失败' }
+}
 // 离开房间：已入座先发 action=3，再断 room 长连接回大厅。
 async function onLeaveRoom() {
   showMenu.value = false
   stopSim()
   winTimer && clearTimeout(winTimer); winTimer = null
   closeInsurance()
+  stopGraceCountdown()
+  statsPanel.value.show = false
+  fineConfirm.value.show = false
   const tgt = game.enterTarget
   if (spectating.value && tgt && heroSeatId.value >= 0) {
     try {
@@ -1466,6 +1564,47 @@ if (import.meta.env.DEV) {
         </div>
       </div>
 
+      <!-- 放假(留座暂离)横幅:倒计时 + 回到座位(对齐扯旋282,重连不自动回座必须点) -->
+      <div v-if="myGrace.active" class="grace-banner">
+        <span>暂离中,{{ myGrace.leftSecs }}s 后自动站起</span>
+        <button class="grace-resume" @click="onSeatReserveResume">回到座位</button>
+      </div>
+
+      <!-- 盈利离桌罚金确认(对齐扯旋 ack 92):确认后带 confirmFine 重发站起 -->
+      <div v-if="fineConfirm.show" class="fine-mask" @click.self="fineConfirm.show = false">
+        <div class="fine-box">
+          <div class="fine-title">离桌罚金</div>
+          <div class="fine-text">{{ fineConfirm.msg || `盈利离桌将扣除罚金 ${formatKNotation(fineConfirm.fine)}` }}</div>
+          <div class="fine-btns">
+            <button class="fine-btn cancel" @click="fineConfirm.show = false">再玩会儿</button>
+            <button class="fine-btn ok" @click="onFineConfirm">确认站起</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏排行 -->
+      <div v-if="statsPanel.show" class="stats-mask" @click.self="statsPanel.show = false">
+        <div class="stats-box">
+          <div class="stats-title">实时战绩</div>
+          <div v-if="statsPanel.loading" class="stats-loading">加载中…</div>
+          <template v-else>
+            <div class="stats-head">
+              <span class="c-name">玩家</span><span class="c-num">带入</span><span class="c-num">当前</span><span class="c-num">盈亏</span>
+            </div>
+            <div v-for="p in statsPanel.players" :key="p.userId" class="stats-row">
+              <span class="c-name">{{ p.nickname }}{{ p.userId === game.user.userId ? '(我)' : '' }}</span>
+              <span class="c-num">{{ formatKNotation(p.bringIn) }}</span>
+              <span class="c-num">{{ formatKNotation(p.stack) }}</span>
+              <span class="c-num" :class="{ win: p.profit > 0, lose: p.profit < 0 }">
+                {{ p.profit > 0 ? '+' : '' }}{{ formatKNotation(p.profit) }}
+              </span>
+            </div>
+            <div v-if="!statsPanel.players.length" class="stats-loading">暂无在座玩家</div>
+          </template>
+          <button class="stats-close" @click="statsPanel.show = false">关闭</button>
+        </div>
+      </div>
+
       <!-- 周期结算面板(循环玩法):到点结算不离座,倒计时内补带入开新周期,超时自动站起 -->
       <div v-if="periodSettle.show" class="ps-mask">
         <div class="ps-box">
@@ -1494,9 +1633,15 @@ if (import.meta.env.DEV) {
         :show="showMenu"
         :spectating="spectating"
         :seated="heroSeatId >= 0"
+        :in-grace="myGrace.active"
+        :is-creator="isRoomCreator"
         @close="showMenu = false"
         @settings="onOpenSettings"
-        @stand-up-spectate="onStandUpSpectate"
+        @stand-up-spectate="onStandUpSpectate()"
+        @seat-reserve="onSeatReserveLeave"
+        @seat-resume="onSeatReserveResume"
+        @stats="onOpenStats"
+        @dismiss="onDismissRoom"
         @leave-room="onLeaveRoom"
         @rotate-test="onOpenRotateTest"
         @deal-test="onOpenDealTest"
@@ -1959,6 +2104,148 @@ if (import.meta.env.DEV) {
 .ps-btn.rebuy {
   background: linear-gradient(180deg, #ffc24b 0%, #ff8a1e 100%);
   color: #4a2600;
+}
+
+/* ===== 暂离横幅 ===== */
+.grace-banner {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--sat, 0px) + 220px * var(--s));
+  transform: translateX(-50%);
+  z-index: 52;
+  display: flex;
+  align-items: center;
+  gap: calc(24px * var(--s));
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 215, 106, 0.5);
+  border-radius: calc(999px * var(--s));
+  padding: calc(14px * var(--s)) calc(30px * var(--s));
+  color: #ffd76a;
+  font-size: calc(32px * var(--s));
+}
+.grace-resume {
+  border: none;
+  border-radius: calc(999px * var(--s));
+  padding: calc(10px * var(--s)) calc(28px * var(--s));
+  background: linear-gradient(180deg, #ffc24b 0%, #ff8a1e 100%);
+  color: #4a2600;
+  font-size: calc(30px * var(--s));
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ===== 罚金确认弹窗 ===== */
+.fine-mask, .stats-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fine-box {
+  width: calc(640px * var(--s));
+  background: #20262e;
+  border-radius: calc(24px * var(--s));
+  padding: calc(40px * var(--s));
+  text-align: center;
+}
+.fine-title {
+  font-size: calc(44px * var(--s));
+  font-weight: 700;
+  color: #ffd76a;
+  margin-bottom: calc(24px * var(--s));
+}
+.fine-text {
+  font-size: calc(34px * var(--s));
+  color: #dfe9e4;
+  margin-bottom: calc(40px * var(--s));
+  line-height: 1.5;
+}
+.fine-btns {
+  display: flex;
+  gap: calc(24px * var(--s));
+}
+.fine-btn {
+  flex: 1;
+  height: calc(104px * var(--s));
+  border: none;
+  border-radius: calc(16px * var(--s));
+  font-size: calc(38px * var(--s));
+  font-weight: 700;
+  cursor: pointer;
+}
+.fine-btn.cancel {
+  background: rgba(255, 255, 255, 0.14);
+  color: #dfe9e4;
+}
+.fine-btn.ok {
+  background: linear-gradient(180deg, #ff7a6b 0%, #e04638 100%);
+  color: #fff;
+}
+
+/* ===== 实时战绩面板 ===== */
+.stats-box {
+  width: calc(780px * var(--s));
+  max-height: 76%;
+  overflow-y: auto;
+  background: #20262e;
+  border-radius: calc(24px * var(--s));
+  padding: calc(36px * var(--s));
+}
+.stats-title {
+  font-size: calc(44px * var(--s));
+  font-weight: 700;
+  color: #ffd76a;
+  text-align: center;
+  margin-bottom: calc(24px * var(--s));
+}
+.stats-loading {
+  text-align: center;
+  color: #9fb0c0;
+  font-size: calc(32px * var(--s));
+  padding: calc(30px * var(--s)) 0;
+}
+.stats-head, .stats-row {
+  display: flex;
+  align-items: center;
+  padding: calc(14px * var(--s)) calc(8px * var(--s));
+  font-size: calc(30px * var(--s));
+}
+.stats-head {
+  color: #9fb0c0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.stats-row {
+  color: #dfe9e4;
+}
+.stats-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.04);
+}
+.c-name {
+  flex: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.c-num {
+  flex: 1;
+  text-align: right;
+}
+.c-num.win { color: #6cd08c; }
+.c-num.lose { color: #ff8a8a; }
+.stats-close {
+  display: block;
+  width: 100%;
+  margin-top: calc(28px * var(--s));
+  height: calc(96px * var(--s));
+  border: none;
+  border-radius: calc(16px * var(--s));
+  background: rgba(255, 255, 255, 0.14);
+  color: #dfe9e4;
+  font-size: calc(36px * var(--s));
+  cursor: pointer;
 }
 </style>
 

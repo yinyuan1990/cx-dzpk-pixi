@@ -86,7 +86,7 @@ export function mapSnapshot(snap) {
     seats.push({
       seat: i, occupied: false, userId: null, nick: '', headPic: '', chips: 0,
       status: -1, bet: 0, sex: 0, isHero: false, canPlay: false, holeCards: null,
-      folded: false, allin: false,
+      folded: false, allin: false, offline: false, sittingOut: false, graceDeadline: 0,
     })
   }
   let mySeatID = -1
@@ -111,6 +111,9 @@ export function mapSnapshot(snap) {
       holeCards: isHero && cards.length === 2 ? cards.map(serverCardToClient) : null,
       folded: !!p.folded,
       allin: !!p.allIn,
+      offline: !!p.offline,
+      sittingOut: !!p.sittingOut,
+      graceDeadline: p.graceDeadline || 0,
     }
   }
 
@@ -146,6 +149,8 @@ export function mapSnapshot(snap) {
     settleTimeMins: snap.settleTimeMins ?? 0,
     rakePercent: snap.rakePercent ?? 0,
     handNo: snap.handNo ?? 0,
+    creatorUserId: snap.creatorUserId ?? 0,
+    clubId: snap.clubId ?? 0,
   }
 }
 
@@ -341,6 +346,31 @@ export function applyEvent(m, type, d) {
       break
     case 'recvSidePots': {
       next.pots = Array.isArray(d.pots) ? d.pots.filter((p) => p > 0) : []
+      break
+    }
+    case 'recvGrace': {
+      // 留座暂离状态机(对齐扯旋282):ON_LEAVE 进放假 / NONE 回座 / SEAT_LOCKED 已站起物理锁座
+      const s = seatByUid(d.userId)
+      if (s) {
+        if (d.state === 'ON_LEAVE') {
+          s.sittingOut = true
+          s.graceDeadline = d.deadline || 0
+        } else if (d.state === 'NONE') {
+          s.sittingOut = false
+          s.graceDeadline = 0
+        }
+        // SEAT_LOCKED:座位由随后的 recvLeave 清,不在这里动
+      }
+      break
+    }
+    case 'recvOffline': {
+      const s = seatByUid(d.userId)
+      if (s) s.offline = true
+      break
+    }
+    case 'recvOnline': {
+      const s = seatByUid(d.userId)
+      if (s) s.offline = false
       break
     }
     case 'recvRoundFinish': {

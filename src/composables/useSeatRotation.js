@@ -223,6 +223,8 @@ export function useSeatRotation() {
         old.allin = !!s.allin
         old.status = s.status
         old.canPlay = !!s.canPlay
+        old.offline = !!s.offline
+        old.sittingOut = !!s.sittingOut
         return old
       }
       return {
@@ -237,6 +239,8 @@ export function useSeatRotation() {
         allin: !!s.allin,
         status: s.status,
         canPlay: !!s.canPlay,
+        offline: !!s.offline,
+        sittingOut: !!s.sittingOut,
       }
     })
     // 不动 rotating 标志：旋转状态由 rotateSeatToBottom 独占管理（原先每次事件置 false 会破坏进行中的旋转）。

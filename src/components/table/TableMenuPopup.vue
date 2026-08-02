@@ -6,11 +6,17 @@ defineProps({
   show: { type: Boolean, default: false },
   spectating: { type: Boolean, default: false },
   seated: { type: Boolean, default: false },
+  inGrace: { type: Boolean, default: false },
+  isCreator: { type: Boolean, default: false },
 })
 defineEmits([
   'close',
   'settings',
   'stand-up-spectate',
+  'seat-reserve',
+  'seat-resume',
+  'stats',
+  'dismiss',
   'leave-room',
   'clear',
   'leave',
@@ -42,6 +48,18 @@ const { t } = useI18n()
         <template v-if="spectating">
           <button v-if="seated" class="menu-row hi" @click="$emit('stand-up-spectate')">
             <span class="mr-icon">🪑</span>{{ t('table.standUpSpectate') }}
+          </button>
+          <button v-if="seated && !inGrace" class="menu-row" @click="$emit('seat-reserve')">
+            <span class="mr-icon">🌴</span>{{ t('table.seatReserve') }}
+          </button>
+          <button v-if="seated && inGrace" class="menu-row hi" @click="$emit('seat-resume')">
+            <span class="mr-icon">▶</span>{{ t('table.seatResume') }}
+          </button>
+          <button class="menu-row" @click="$emit('stats')">
+            <span class="mr-icon">📊</span>{{ t('table.realtimeStats') }}
+          </button>
+          <button v-if="isCreator" class="menu-row danger" @click="$emit('dismiss')">
+            <span class="mr-icon">🗑</span>{{ t('table.dismissRoom') }}
           </button>
           <button class="menu-row danger" data-sound="back" @click="$emit('leave-room')">
             <span class="mr-icon">⎋</span>{{ t('table.leaveRoom') }}

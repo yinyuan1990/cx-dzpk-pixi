@@ -11,17 +11,22 @@ export const MSG = {
   LOGIN: 401, ROOM_LIST: 402, CREATE_ROOM: 403, ENTER_ROOM: 404, LEAVE_ROOM: 405,
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
   MY_RECORDS: 411, INSURANCE_BUY: 412,
+  SEAT_RESERVE_LEAVE: 413, SEAT_RESERVE_RESUME: 414, REALTIME_STATS: 415, DISMISS_ROOM: 416,
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
+  CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
   SETTLE: 464, PLAYER_STAND: 465, SNAPSHOT_RES: 466, PLAYER_LEAVE: 467,
   PERIOD_SETTLE: 468, ROOM_STATE: 469, STAND_UP_RES: 470, MY_RECORDS_RES: 471,
   INSURANCE_OFFER: 472, INSURANCE_RESULT: 473,
+  SEAT_RESERVE_GRACE: 474, REALTIME_STATS_RES: 475, RUN_AWAY_FINE: 476,
+  PLAYER_OFFLINE: 477, PLAYER_ONLINE: 478, ROOM_DISMISSED: 479,
   CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
+  DIAMOND_WARNING: 488, CLUB_SCORE_LOGS_RES: 489,
   ERROR: 499,
 }
 
@@ -357,13 +362,21 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
     }
     emit('recvLeave', {
       seatID: d.seat, userID: d.userId, reason: d.reason, refund: d.refund, balance: d.balance,
-      profit: d.profit, rake: d.rake, bringIn: d.bringIn,
+      profit: d.profit, rake: d.rake, bringIn: d.bringIn, fine: d.fine || 0,
     })
   })
   on(MSG.BUY_IN_RES, (d) => emit('recvBuyin', {
     userID: d.userId, amount: d.amount, applied: !!d.applied, stackAbs: d.stack, balance: d.balance,
   }))
   on(MSG.PERIOD_SETTLE, (d) => emit('recvPeriodSettle', d))
+
+  // ---- 边缘功能推送(对齐扯旋):暂离/罚金/断线/解散/钻石警告 ----
+  on(MSG.SEAT_RESERVE_GRACE, (d) => emit('recvGrace', d))       // {userId,seat,state:PENDING|ON_LEAVE|SEAT_LOCKED|NONE,deadline?}
+  on(MSG.RUN_AWAY_FINE, (d) => emit('recvFine', d))             // {userId,kind:EARLY_LEAVE|RUN_AWAY,amount}
+  on(MSG.PLAYER_OFFLINE, (d) => emit('recvOffline', d))         // {userId,seat}
+  on(MSG.PLAYER_ONLINE, (d) => emit('recvOnline', d))           // {userId,seat}
+  on(MSG.ROOM_DISMISSED, (d) => emit('recvDismissed', d))       // {byUserId}
+  on(MSG.DIAMOND_WARNING, (d) => emit('recvDiamondWarning', d)) // {clubId,needed,msg}
 
   // ---- 房态:WAITING(人不够) → 延时清台;FINISHED → 下一手 HAND_START 自会清 ----
   let waitingTimer = null
@@ -466,20 +479,72 @@ export async function addChips({ seatID, anteNumber, roomId }) {
 
 /**
  * 站起(留在房间观战)。后端即时回执 STAND_UP_RES:
+ *   status=92 → 盈利离桌要扣罚金,需前端确认后带 confirmFine=true 重发(对齐扯旋 ack 92);
  *   pending=true → 牌局中申请,这手打完自动站起(座位保留,PLAYER_STAND 局末才来);
  *   pending=false → 已立即站起(PLAYER_STAND 广播随后清座)。
- * 返回 {status:0, pending, msg}。
+ * 返回 {status, pending, needConfirm, fine, msg}。
  */
-export async function standUpSeat({ seatID, roomId }) {
+export async function standUpSeat({ seatID, roomId, confirmFine = false }) {
   void seatID
   const sock = await ensureSocket()
   const p = observeResult((ok) => [
-    sock.on(MSG.STAND_UP_RES, (d) => ok({ status: 0, pending: !!(d && d.pending), msg: (d && d.msg) || '' })),
+    sock.on(MSG.STAND_UP_RES, (d) => {
+      if (d && d.status === 92) ok({ status: 92, needConfirm: true, fine: d.fine ?? 0, msg: d.msg || '' })
+      else ok({ status: 0, pending: !!(d && d.pending), msg: (d && d.msg) || '' })
+    }),
   ])
-  sock.send(MSG.STAND_UP, {}, roomId)
+  sock.send(MSG.STAND_UP, confirmFine ? { confirmFine: true } : {}, roomId)
   const r = await p
-  if (_room && !r.pending) _room.mySeat = -1
+  if (_room && !r.needConfirm && !r.pending) _room.mySeat = -1
   return r
+}
+
+/** 留座暂离(放假):空闲立即生效;牌局中未弃牌先 PENDING,弃牌/局末生效。结果走 recvGrace 事件。 */
+export async function seatReserveLeave(roomId) {
+  const sock = await ensureSocket()
+  sock.send(MSG.SEAT_RESERVE_LEAVE, {}, roomId)
+}
+
+/** 暂离中回到座位(重连不会自动回,必须主动发,对齐扯旋)。结果走 recvGrace(state=NONE)。 */
+export async function seatReserveResume(roomId) {
+  const sock = await ensureSocket()
+  sock.send(MSG.SEAT_RESERVE_RESUME, {}, roomId)
+}
+
+/** 实时战绩:{players:[{userId,nickname,seat,bringIn,stack,profit,handCount,...}],room,history} */
+export async function realtimeStatsFlow(roomId) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.REALTIME_STATS, {}, { roomId, resType: MSG.REALTIME_STATS_RES })
+  return res.data || { players: [] }
+}
+
+/** 解散牌局(创建者/俱乐部管理)。全房收 recvDismissed。 */
+export async function dismissRoomFlow(roomId) {
+  const sock = await ensureSocket()
+  sock.send(MSG.DISMISS_ROOM, {}, roomId)
+}
+
+// ---------------------------------------------------------------
+// 俱乐部积分(每俱乐部独立一本账,对齐扯旋)
+// ---------------------------------------------------------------
+
+/**
+ * 积分操作。op: ownerAdd 群主增发 / ownerBurn 群主核销 / distribute 上分 /
+ *   collect 下分 / transfer 赠送。返回后端 CLUB_OP_RES data(含最新余额)。
+ */
+export async function clubScoreOpFlow({ clubId, op, userId = 0, amount }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_SCORE_OP, { clubId, op, userId, amount },
+    { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 积分明细(自己;群主/管理员可带 userId 查成员)。[{type,typeName,amount,before,after,remark,time}] */
+export async function clubScoreLogsFlow({ clubId, userId = 0, limit = 50 }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_SCORE_LOGS, { clubId, userId, limit },
+    { resType: MSG.CLUB_SCORE_LOGS_RES })
+  return (res.data && res.data.logs) || []
 }
 
 /** 我的战绩:{records:[周期/站起结算列表], stats:{sessions,totalProfit,totalHands,...}} */
