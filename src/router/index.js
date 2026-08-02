@@ -6,6 +6,8 @@ const routes = [
   { path: '/login', name: 'login', component: () => import('../views/LoginView.vue') },
   { path: '/hall', name: 'hall', component: () => import('../views/HallView.vue') },
   { path: '/friend', name: 'friend', component: () => import('../views/FriendView.vue') },
+  { path: '/club', name: 'club', component: () => import('../views/ClubView.vue') },
+  { path: '/club/:id', name: 'clubDetail', component: () => import('../views/ClubDetailView.vue') },
   // 牌桌(多玩法复用同一壳,玩法用 query/param 区分)
   { path: '/table/:id?', name: 'table', component: () => import('../views/TableView.vue') },
 ]

@@ -11,11 +11,16 @@ export const MSG = {
   LOGIN: 401, ROOM_LIST: 402, CREATE_ROOM: 403, ENTER_ROOM: 404, LEAVE_ROOM: 405,
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
   MY_RECORDS: 411,
+  CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
+  CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
+  CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
   SETTLE: 464, PLAYER_STAND: 465, SNAPSHOT_RES: 466, PLAYER_LEAVE: 467,
   PERIOD_SETTLE: 468, ROOM_STATE: 469, STAND_UP_RES: 470, MY_RECORDS_RES: 471,
+  CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
+  CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   ERROR: 499,
 }
 
@@ -65,20 +70,103 @@ export function logout() {
   _cred = null
 }
 
-/** 房间列表。返回 [{roomId,name,sb,bb,maxPlayers,settleTimeMins,seated,stage}] */
-export async function roomListFlow() {
+/** 房间列表(clubId=0 公开大厅,>0 该俱乐部的房间)。返回 [{roomId,name,clubId,sb,bb,...}] */
+export async function roomListFlow(clubId = 0) {
   const sock = await ensureSocket()
-  const res = await sock.request(MSG.ROOM_LIST, {}, { resType: MSG.ROOM_LIST_RES })
+  const res = await sock.request(MSG.ROOM_LIST, { clubId }, { resType: MSG.ROOM_LIST_RES })
   return (res.data && res.data.rooms) || []
 }
 
-/** 创建房间。返回 {roomId,name,sb,bb,maxPlayers,settleTimeMins,rakePercent,minBuyin,maxBuyin} */
-export async function createRoomFlow({ name, sb, bb, maxPlayers = 9, settleTimeMins = 30, rakePercent = 5 }) {
+/** 创建房间(clubId>0 = 俱乐部房,需群主/管理员)。返回 {roomId,name,sb,bb,...} */
+export async function createRoomFlow({ name, sb, bb, maxPlayers = 9, settleTimeMins = 30, rakePercent = 5, clubId = 0 }) {
   const sock = await ensureSocket()
   const res = await sock.request(MSG.CREATE_ROOM,
-    { name, sb, bb, maxPlayers, settleTimeMins, rakePercent },
+    { name, sb, bb, maxPlayers, settleTimeMins, rakePercent, clubId },
     { resType: MSG.CREATE_ROOM_RES })
   return res.data
+}
+
+// ---------------------------------------------------------------
+// 俱乐部(德州独立俱乐部,规则对齐扯旋)
+// ---------------------------------------------------------------
+
+/** 创建俱乐部。返回 {clubId,clubNo,name,myInviteCode,diamondCost,diamond} */
+export async function clubCreateFlow({ name, notice = '' }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_CREATE, { name, notice }, { resType: MSG.CLUB_CREATE_RES })
+  if (_login && res.data && res.data.diamond != null) _login.diamond = res.data.diamond
+  return res.data
+}
+
+/** 我的俱乐部列表。[{clubId,clubNo,name,notice,ownerUserId,myRole,myInviteCode,myPartnerRate,memberCount,pendingCount}] */
+export async function clubListFlow() {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_LIST, {}, { resType: MSG.CLUB_LIST_RES })
+  return (res.data && res.data.clubs) || []
+}
+
+/** 申请加入(code=俱乐部号或邀请码)。返回 {clubId,clubName,codeType} */
+export async function clubApplyFlow(code) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_APPLY, { code: Number(code) }, { resType: MSG.CLUB_APPLY_RES })
+  return res.data
+}
+
+/** 待审批列表(群主/管理员)。[{requestId,userId,nickname,codeType,inviterUserId,time}] */
+export async function clubApplyListFlow(clubId) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_APPLY_LIST, { clubId }, { resType: MSG.CLUB_APPLY_LIST_RES })
+  return (res.data && res.data.requests) || []
+}
+
+/** 审批入会申请 */
+export async function clubReviewFlow({ clubId, requestId, approve }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_REVIEW, { clubId, requestId, approve: !!approve },
+    { resType: MSG.CLUB_REVIEW_RES })
+  return res.data
+}
+
+/** 成员列表。[{userId,nickname,role,parentUserId,level,inviteCode,partnerRate}] */
+export async function clubMembersFlow(clubId) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_MEMBERS, { clubId }, { resType: MSG.CLUB_MEMBERS_RES })
+  return (res.data && res.data.members) || []
+}
+
+/** 设置角色:role 1成员 2管理员 4合伙人(带 partnerRate) */
+export async function clubSetRoleFlow({ clubId, userId, role, partnerRate = 0 }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_SET_ROLE, { clubId, userId, role, partnerRate },
+    { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 踢出成员 */
+export async function clubKickFlow({ clubId, userId }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_KICK, { clubId, userId }, { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 退出俱乐部 */
+export async function clubQuitFlow(clubId) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_QUIT, { clubId }, { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 解散俱乐部(仅群主) */
+export async function clubDissolveFlow(clubId) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_DISSOLVE, { clubId }, { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 订阅审批结果推送({clubId,clubName,approve})。返回取消函数。 */
+export function onClubNotify(fn) {
+  if (!_sock) return () => {}
+  return _sock.on(MSG.CLUB_NOTIFY, (d) => { try { fn(d) } catch { /* noop */ } })
 }
 
 // ---------------------------------------------------------------

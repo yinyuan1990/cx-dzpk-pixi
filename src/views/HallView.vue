@@ -131,6 +131,7 @@ function signed(n) {
 const activeTab = ref('hall')
 function onTab(key) {
   if (key === 'friend') router.push('/friend')
+  else if (key === 'game') router.push('/club')
   else activeTab.value = key
 }
 </script>

@@ -77,7 +77,7 @@ export default {
     creating: '创建中…',
     backLogin: '返回登录',
     tabHall: '大厅',
-    tabGame: '游戏',
+    tabGame: '俱乐部',
     tabFriend: '好友局',
     tabCareer: '生涯',
     tabProfile: '我的',
