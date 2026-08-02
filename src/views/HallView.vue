@@ -67,10 +67,22 @@ function onEnter(tb) {
   router.push('/table/' + tb.roomId)
 }
 
-// ===== 创建房间 =====
+// ===== 创建房间(参数对齐老德州建房,后端 RoomRules.parse 全量校验) =====
 const showCreate = ref(false)
 const creating = ref(false)
-const form = ref({ name: '', sb: 50, bb: 100, maxPlayers: 9, settleTimeMins: 30, rakePercent: 5 })
+const form = ref({
+  name: '', sb: 50, bb: 100, maxPlayers: 9, settleTimeMins: 30, rakePercent: 5,
+  opTimeSec: 15,       // 思考时间(秒)
+  anteMode: 0,         // 前注:0无 1半盲 2一个大盲
+  inMaxRate: 4,        // 最大带入 = 100BB × 倍数(后端 inChip=100BB, inMinRate=1)
+  straddleOn: false,   // 抓头
+  insuranceOn: false,  // 保险(河牌保险)
+  muckOn: false,       // 埋牌(只亮赢家)
+  vpOn: false,         // 入池率
+  ipLimitOn: false,    // 同 IP 限同桌
+  gameMinTime: 0,      // 最短上桌(分钟,0=不限;>0 时关闭提前离桌)
+  autoStartNum: 2,     // 自动开局人数
+})
 const BLIND_PRESETS = [
   { sb: 50, bb: 100 },
   { sb: 100, bb: 200 },
@@ -79,19 +91,57 @@ const BLIND_PRESETS = [
   { sb: 1000, bb: 2000 },
 ]
 const SETTLE_PRESETS = [30, 45, 60, 90, 120]
+const OPTIME_PRESETS = [10, 15, 20, 30]
+const MAXRATE_PRESETS = [
+  { rate: 2, label: '200BB' },
+  { rate: 4, label: '400BB' },
+  { rate: 10, label: '1000BB' },
+]
+const ANTE_MODES = [
+  { v: 0, label: '无' },
+  { v: 1, label: '半盲' },
+  { v: 2, label: '1大盲' },
+]
+const MINTIME_PRESETS = [
+  { v: 0, label: '不限' },
+  { v: 30, label: '30分钟' },
+  { v: 60, label: '60分钟' },
+]
+// 玩法开关(chips 行)
+const RULE_SWITCHES = [
+  { key: 'straddleOn', label: '抓头' },
+  { key: 'insuranceOn', label: '保险' },
+  { key: 'muckOn', label: '埋牌' },
+  { key: 'vpOn', label: '入池率' },
+  { key: 'ipLimitOn', label: 'IP限制' },
+]
 
 async function onCreate() {
   if (creating.value) return
   creating.value = true
   errMsg.value = ''
+  const f = form.value
+  const bb = f.sb * 2
   try {
     const room = await createRoomFlow({
-      name: form.value.name || undefined,
-      sb: form.value.sb,
-      bb: form.value.bb,
-      maxPlayers: form.value.maxPlayers,
-      settleTimeMins: form.value.settleTimeMins,
-      rakePercent: form.value.rakePercent,
+      name: f.name || undefined,
+      sb: f.sb,
+      maxPlayers: f.maxPlayers,
+      settleTimeMins: f.settleTimeMins,
+      rakePercent: f.rakePercent,
+      opTimeSec: f.opTimeSec,
+      ante: f.anteMode === 2 ? bb : f.anteMode === 1 ? f.sb : 0,
+      inChip: bb * 100,
+      inMinRate: 1,
+      inMaxRate: f.inMaxRate,
+      straddleOn: f.straddleOn ? 1 : 0,
+      insuranceOn: f.insuranceOn ? 1 : 0,
+      muckOn: f.muckOn ? 1 : 0,
+      vpOn: f.vpOn ? 1 : 0,
+      ipLimitOn: f.ipLimitOn ? 1 : 0,
+      gameMinTime: f.gameMinTime,
+      aheadLeaveOn: f.gameMinTime > 0 ? 0 : 1,
+      autoStartNum: Math.min(f.autoStartNum, f.maxPlayers),
     })
     showCreate.value = false
     onEnter({ roomId: room.roomId, name: room.name, sb: room.sb, bb: room.bb })
@@ -248,9 +298,9 @@ function onTab(key) {
         <div class="c-label">{{ t('hall.seatsLabel') }}</div>
         <div class="c-opts">
           <button
-            v-for="n in [2, 6, 9]"
+            v-for="n in [2, 3, 4, 5, 6, 7, 8, 9]"
             :key="n"
-            class="c-opt"
+            class="c-opt c-opt-sm"
             :class="{ on: form.maxPlayers === n }"
             @click="form.maxPlayers = n"
           >{{ n }}人</button>
@@ -276,6 +326,61 @@ function onTab(key) {
             :class="{ on: form.rakePercent === r }"
             @click="form.rakePercent = r"
           >{{ r }}%</button>
+        </div>
+
+        <div class="c-label">思考时间</div>
+        <div class="c-opts">
+          <button
+            v-for="s in OPTIME_PRESETS"
+            :key="s"
+            class="c-opt"
+            :class="{ on: form.opTimeSec === s }"
+            @click="form.opTimeSec = s"
+          >{{ s }}秒</button>
+        </div>
+
+        <div class="c-label">最大带入(最小 100BB)</div>
+        <div class="c-opts">
+          <button
+            v-for="p in MAXRATE_PRESETS"
+            :key="p.rate"
+            class="c-opt"
+            :class="{ on: form.inMaxRate === p.rate }"
+            @click="form.inMaxRate = p.rate"
+          >{{ p.label }}</button>
+        </div>
+
+        <div class="c-label">前注</div>
+        <div class="c-opts">
+          <button
+            v-for="a in ANTE_MODES"
+            :key="a.v"
+            class="c-opt"
+            :class="{ on: form.anteMode === a.v }"
+            @click="form.anteMode = a.v"
+          >{{ a.label }}</button>
+        </div>
+
+        <div class="c-label">最短上桌</div>
+        <div class="c-opts">
+          <button
+            v-for="p in MINTIME_PRESETS"
+            :key="p.v"
+            class="c-opt"
+            :class="{ on: form.gameMinTime === p.v }"
+            @click="form.gameMinTime = p.v"
+          >{{ p.label }}</button>
+        </div>
+
+        <div class="c-label">玩法开关</div>
+        <div class="c-opts">
+          <button
+            v-for="sw in RULE_SWITCHES"
+            :key="sw.key"
+            class="c-opt c-opt-sm"
+            :class="{ on: form[sw.key] }"
+            @click="form[sw.key] = !form[sw.key]"
+          >{{ sw.label }}</button>
         </div>
 
         <button class="c-confirm" :disabled="creating" @click="onCreate">
@@ -576,6 +681,10 @@ function onTab(key) {
   background: #e8faf5;
   color: #08a88c;
   font-weight: 600;
+}
+.c-opt-sm {
+  padding: 0 calc(20px * var(--s));
+  font-size: calc(28px * var(--s));
 }
 .c-confirm {
   width: 100%;

@@ -30,7 +30,7 @@ import { playSound } from '../utils/sound'
 import { useSeatRotation } from '../composables/useSeatRotation'
 import { useTableBackground } from '../composables/useTableBackground'
 import { useGameStore } from '../stores/game.js'
-import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction } from '../net/session.js'
+import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy } from '../net/session.js'
 import { mapSnapshot, applyEvent, mapBoard, debugServerCard } from '../net/tableModel.js'
 import { formatKNotation } from '../utils/format'
 import { CARD_VALUES } from '../config/cards'
@@ -306,6 +306,9 @@ function handleGameEvent(type, data) {
         if (!tableModel || !data) return
         // 错误推送:提示条显示,不进模型
         if (type === 'error') { errMsg.value = data.msg || '操作失败'; return }
+        // 保险(河牌保险,两人全下跑马):不进模型,独立面板处理
+        if (type === 'recvInsuranceOffer') { onInsuranceOffer(data); return }
+        if (type === 'recvInsuranceResult') { onInsuranceResult(data); return }
         // 带入生效:若是自己,同步账户余额(带入弹窗/补带入用)
         if (type === 'recvBuyin' && data.userID === game.user.userId && data.balance != null) {
           game.user.chips = data.balance
@@ -429,6 +432,57 @@ function handleGameEvent(type, data) {
         } catch (e) { console.error('[spectate] 事件后置动画异常', type, e) }
 }
 const errMsg = ref('')
+
+// ===== 保险(河牌保险) — 后端 INSURANCE_OFFER/RESULT,规则见 InsuranceRule =====
+// 领先方:弹购买面板(outs/赔率/额度/倒计时);其他人:顶部横幅"保险决策中"。
+const insOffer = ref(null) // {leaderUserId,outs,outCards,oddsX100,maxInsure,deadline,mine}
+const insAmount = ref(0)
+const insLeftSecs = ref(0)
+let insTicker = null
+function closeInsurance() {
+  insOffer.value = null
+  if (insTicker) { clearInterval(insTicker); insTicker = null }
+}
+function onInsuranceOffer(d) {
+  const mine = d.leaderUserId === game.user.userId
+  insOffer.value = { ...d, mine }
+  insAmount.value = Math.floor((d.maxInsure || 0) / 2)
+  const tick = () => {
+    insLeftSecs.value = Math.max(0, Math.round(((d.deadline || 0) - Date.now()) / 1000))
+    if (insLeftSecs.value <= 0) closeInsurance()
+  }
+  tick()
+  if (insTicker) clearInterval(insTicker)
+  insTicker = setInterval(tick, 250)
+}
+/** 保费 = 投保额 ÷ 赔率(向上取整,同后端 InsuranceRule.premium) */
+function insPremium(amount) {
+  const odds = insOffer.value ? insOffer.value.oddsX100 : 0
+  if (!odds) return 0
+  return Math.ceil((amount * 100) / odds)
+}
+async function buyInsurance(amount) {
+  const roomId = game.enterTarget?.roomId
+  if (roomId == null) return
+  try {
+    await insuranceBuy(roomId, amount)
+  } catch (e) {
+    errMsg.value = e.message || '保险操作失败'
+  }
+  closeInsurance()
+}
+function onInsuranceResult(d) {
+  if (d.phase === 'decided') {
+    closeInsurance()
+    if (d.insured > 0) {
+      errMsg.value = `保险已购买:投保 ${formatKNotation(d.insured)},保费 ${formatKNotation(d.premium)}`
+    }
+  } else if (d.phase === 'settled' && d.insured > 0) {
+    errMsg.value = d.outHit
+      ? `被反超!保险赔付 +${formatKNotation(d.insured)}`
+      : `守住了,扣保费 -${formatKNotation(d.premium)}`
+  }
+}
 
 // Pixi 收池动画的底池回调:仅演示/测试模式使用;观战/对局时底池由模型唯一驱动(防双头写乱跳)。
 function onPixiPot(v) {
@@ -1206,6 +1260,7 @@ async function onLeaveRoom() {
   showMenu.value = false
   stopSim()
   winTimer && clearTimeout(winTimer); winTimer = null
+  closeInsurance()
   const tgt = game.enterTarget
   if (spectating.value && tgt && heroSeatId.value >= 0) {
     try {
@@ -1274,6 +1329,7 @@ if (import.meta.env.DEV) {
       setSpectating: (v) => { spectating.value = !!v },
       rotateTo: (nodeId) => rotateSeatToBottom(nodeId),
       rotateEmpty: () => rotateEmptyToBottom(),
+      myUserId: game.user.userId,
     }
   })
 }
@@ -1294,6 +1350,34 @@ if (import.meta.env.DEV) {
 
     <!-- 观战/进房错误提示 -->
     <div v-if="errMsg" class="table-err" @click="errMsg = ''">{{ errMsg }}</div>
+
+    <!-- 保险(河牌保险):领先方购买面板 / 其他人决策中横幅 -->
+    <div v-if="insOffer && !insOffer.mine" class="ins-banner">
+      保险决策中… {{ insLeftSecs }}s
+    </div>
+    <div v-if="insOffer && insOffer.mine" class="ins-panel">
+      <div class="ins-title">河牌保险 <span class="ins-timer">{{ insLeftSecs }}s</span></div>
+      <div class="ins-row">
+        反超牌 <b>{{ insOffer.outs }}</b> 张 · 赔率 <b>1:{{ (insOffer.oddsX100 / 100).toFixed(1) }}</b>
+      </div>
+      <div class="ins-row ins-outs">{{ (insOffer.outCards || []).join(' ') }}</div>
+      <div class="ins-amounts">
+        <button
+          v-for="r in [0.25, 0.5, 1]"
+          :key="r"
+          class="ins-amt"
+          :class="{ on: insAmount === Math.floor(insOffer.maxInsure * r) }"
+          @click="insAmount = Math.floor(insOffer.maxInsure * r)"
+        >{{ r === 1 ? '满池' : r === 0.5 ? '1/2池' : '1/4池' }}</button>
+      </div>
+      <div class="ins-row">
+        投保 <b>{{ formatKNotation(insAmount) }}</b> · 保费 <b>{{ formatKNotation(insPremium(insAmount)) }}</b>
+      </div>
+      <div class="ins-btns">
+        <button class="ins-btn pass" @click="buyInsurance(0)">不买</button>
+        <button class="ins-btn buy" @click="buyInsurance(insAmount)">购买保险</button>
+      </div>
+    </div>
 
     <!-- 观战状态条（调试可见：是否在观战/房号/在座/状态）-->
     <div v-if="specInfo" class="spec-info">{{ specInfo }}</div>
@@ -1591,6 +1675,95 @@ if (import.meta.env.DEV) {
   color: #ff6b6b;
   font-size: calc(32px * var(--s));
   text-align: center;
+}
+
+/* 保险面板/横幅(河牌保险) */
+.ins-banner {
+  position: absolute;
+  top: calc(200px * var(--s) + var(--sat, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: calc(14px * var(--s)) calc(36px * var(--s));
+  border-radius: calc(30px * var(--s));
+  background: rgba(20, 39, 32, 0.9);
+  border: 1px solid rgba(255, 200, 87, 0.5);
+  color: #ffc857;
+  font-size: calc(30px * var(--s));
+}
+.ins-panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(520px * var(--s));
+  transform: translateX(-50%);
+  z-index: 72;
+  width: calc(720px * var(--s));
+  padding: calc(32px * var(--s)) calc(40px * var(--s));
+  border-radius: calc(24px * var(--s));
+  background: linear-gradient(180deg, #223c33 0%, #142720 100%);
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  box-shadow: 0 calc(8px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.ins-title {
+  font-size: calc(40px * var(--s));
+  font-weight: 700;
+  color: #ffc857;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: calc(16px * var(--s));
+}
+.ins-timer { color: #ff6b6b; }
+.ins-row {
+  font-size: calc(30px * var(--s));
+  color: #cfe3d8;
+  margin: calc(8px * var(--s)) 0;
+}
+.ins-row b { color: #ffc857; }
+.ins-outs {
+  font-size: calc(26px * var(--s));
+  color: #8fb3a3;
+  word-break: break-all;
+}
+.ins-amounts {
+  display: flex;
+  gap: calc(16px * var(--s));
+  margin: calc(16px * var(--s)) 0;
+}
+.ins-amt {
+  flex: 1;
+  padding: calc(14px * var(--s)) 0;
+  border-radius: calc(12px * var(--s));
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: calc(28px * var(--s));
+}
+.ins-amt.on {
+  border-color: #ffc857;
+  background: rgba(255, 200, 87, 0.18);
+  color: #ffc857;
+}
+.ins-btns {
+  display: flex;
+  gap: calc(20px * var(--s));
+  margin-top: calc(20px * var(--s));
+}
+.ins-btn {
+  flex: 1;
+  padding: calc(18px * var(--s)) 0;
+  border-radius: calc(14px * var(--s));
+  border: none;
+  font-size: calc(32px * var(--s));
+  font-weight: 700;
+}
+.ins-btn.pass {
+  background: rgba(255, 255, 255, 0.12);
+  color: #cfe3d8;
+}
+.ins-btn.buy {
+  background: linear-gradient(180deg, #ffd76e 0%, #f0a93c 100%);
+  color: #4a2f00;
 }
 /* 带入弹窗 —— 布局 1:1 Cocos buyin_panel.prefab（尺寸按设计稿像素 × var(--s)）：
    buyin_bring_layout 938 宽；金额框 848×212（icon 56×58 + chou_ma_label fs100 左、bb fs56 右）；

@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { SEAT_POSITIONS, toCx, toCy } from '../config/tableSeats'
+import { SEAT_POSITIONS, seatPositionsFor, toCx, toCy } from '../config/tableSeats'
 import { randomAvatar } from '../config/defaultAvatars'
 import { dealHand } from '../config/cards'
 import { playSound } from '../utils/sound'
@@ -43,26 +43,39 @@ const STEP_INTERVAL_MS = 150
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export function useSeatRotation() {
-  const N = SEAT_POSITIONS.length
+  // 座位坐标环 — 按房间人数切换(对齐 Unity SeatUIInfos 子集,见 tableSeats.js)。
+  //   默认 9 人;进房快照后由 setSeatCount(model.seatCount) 重建。
+  const positions = ref(SEAT_POSITIONS)
   const seatSlot = ref(SEAT_POSITIONS.map((_, i) => i)) // seatSlot[nodeId] = slot
   const players = ref(SEAT_POSITIONS.map(() => null)) // players[nodeId] = player | null
   const rotating = ref(false)
+  const N = () => positions.value.length
+
+  /** 按房间座位数重建座位环(2/6/9 人桌…)。人数没变则不动(保护进行中的旋转/座位状态)。 */
+  function setSeatCount(n) {
+    const count = Math.min(9, Math.max(2, n | 0 || 9))
+    if (positions.value.length === count) return
+    positions.value = seatPositionsFor(count)
+    seatSlot.value = positions.value.map((_, i) => i)
+    players.value = positions.value.map(() => null)
+    rotating.value = false
+  }
 
   // view model consumed by the template: one entry per seat NODE.
   // `side` lets the seat flip child layout per ring position (left/right/top/bottom)
   // -- mirrors Cocos updateLeftOrRightSeatRatio; pure layout, no rotation impact.
   function sideOfSlot(slot) {
-    const x = SEAT_POSITIONS[slot].x
-    const y = SEAT_POSITIONS[slot].y
+    const x = positions.value[slot].x
+    const y = positions.value[slot].y
     if (x < -1) return 'left'
     if (x > 1) return 'right'
     return y > 0 ? 'top' : 'bottom'
   }
 
   const seats = computed(() =>
-    SEAT_POSITIONS.map((s, nodeId) => {
+    positions.value.map((s, nodeId) => {
       const slot = seatSlot.value[nodeId]
-      const p = SEAT_POSITIONS[slot]
+      const p = positions.value[slot]
       return {
         id: s.id,
         nodeId,
@@ -79,13 +92,14 @@ export function useSeatRotation() {
   // 核心旋转（复刻 gameUI.sitdownWithAni）：整环逐格转动（每步 0.11s tween + 0.15s 间隔，最近方向），
   //   直到 nodeId 对应座位转到 slot0（屏幕最下）。观战自动旋转/点击坐下/mock 坐下共用。
   async function rotateSeatToBottom(nodeId) {
+    const n = N()
     const slot = seatSlot.value[nodeId]
     if (slot === 0 || rotating.value) return
-    const dir = slot <= N / 2 ? -1 : 1 // nearest: slot steps vs N-slot steps
-    const steps = dir === -1 ? slot : N - slot
+    const dir = slot <= n / 2 ? -1 : 1 // nearest: slot steps vs n-slot steps
+    const steps = dir === -1 ? slot : n - slot
     rotating.value = true
     for (let s = 0; s < steps; s++) {
-      seatSlot.value = seatSlot.value.map((x) => (x + dir + N) % N)
+      seatSlot.value = seatSlot.value.map((x) => (x + dir + n) % n)
       await sleep(STEP_INTERVAL_MS)
     }
     rotating.value = false
@@ -106,8 +120,8 @@ export function useSeatRotation() {
   // deal test. seat0 (bottom) = self/Hero (face-up). cards revealed=false so the
   // deal layer flips them in as it deals.
   function seatPlayers(n, selfSeated = true) {
-    seatSlot.value = SEAT_POSITIONS.map((_, i) => i)
-    players.value = SEAT_POSITIONS.map((_, i) =>
+    seatSlot.value = positions.value.map((_, i) => i)
+    players.value = positions.value.map((_, i) =>
       i < n ? makePlayer({ isSelf: selfSeated && i === 0, revealed: false }) : null,
     )
     rotating.value = false
@@ -136,8 +150,8 @@ export function useSeatRotation() {
   }
 
   function reset() {
-    seatSlot.value = SEAT_POSITIONS.map((_, i) => i)
-    players.value = SEAT_POSITIONS.map(() => null)
+    seatSlot.value = positions.value.map((_, i) => i)
+    players.value = positions.value.map(() => null)
     rotating.value = false
   }
 
@@ -151,10 +165,11 @@ export function useSeatRotation() {
       return
     }
     let best = -1, bestSteps = Infinity
-    for (let nodeId = 0; nodeId < N; nodeId++) {
+    const n = N()
+    for (let nodeId = 0; nodeId < n; nodeId++) {
       if (players.value[nodeId]) continue
       const slot = seatSlot.value[nodeId]
-      const steps = Math.min(slot, N - slot)
+      const steps = Math.min(slot, n - slot)
       if (steps < bestSteps) { bestSteps = steps; best = nodeId }
     }
     if (best >= 0) rotateSeatToBottom(best)
@@ -175,8 +190,9 @@ export function useSeatRotation() {
   const isWaitingStatus = (v) => v === 8 || v === 15 || v === 18
   function applyModelToSeats(model) {
     if (!model || !Array.isArray(model.seats)) return
+    if (model.seatCount) setSeatCount(model.seatCount)
     const prev = players.value
-    players.value = SEAT_POSITIONS.map((_, i) => {
+    players.value = positions.value.map((_, i) => {
       const s = model.seats[i]
       if (!s || !s.occupied) return null
       const old = prev[i]
@@ -226,5 +242,5 @@ export function useSeatRotation() {
     // 不动 rotating 标志：旋转状态由 rotateSeatToBottom 独占管理（原先每次事件置 false 会破坏进行中的旋转）。
   }
 
-  return { seats, seatedCount, rotating, sitDown, seatPlayers, seatOne, revealSeatCard, hideSeatCards, reset, applyModelToSeats, rotateSeatToBottom, rotateEmptyToBottom }
+  return { seats, seatedCount, rotating, sitDown, seatPlayers, seatOne, revealSeatCard, hideSeatCards, reset, applyModelToSeats, rotateSeatToBottom, rotateEmptyToBottom, setSeatCount }
 }

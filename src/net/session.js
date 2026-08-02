@@ -10,7 +10,7 @@ import { cardStrToId } from './tableModel.js'
 export const MSG = {
   LOGIN: 401, ROOM_LIST: 402, CREATE_ROOM: 403, ENTER_ROOM: 404, LEAVE_ROOM: 405,
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
-  MY_RECORDS: 411,
+  MY_RECORDS: 411, INSURANCE_BUY: 412,
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
@@ -19,6 +19,7 @@ export const MSG = {
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
   SETTLE: 464, PLAYER_STAND: 465, SNAPSHOT_RES: 466, PLAYER_LEAVE: 467,
   PERIOD_SETTLE: 468, ROOM_STATE: 469, STAND_UP_RES: 470, MY_RECORDS_RES: 471,
+  INSURANCE_OFFER: 472, INSURANCE_RESULT: 473,
   CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   ERROR: 499,
@@ -77,13 +78,24 @@ export async function roomListFlow(clubId = 0) {
   return (res.data && res.data.rooms) || []
 }
 
-/** 创建房间(clubId>0 = 俱乐部房,需群主/管理员)。返回 {roomId,name,sb,bb,...} */
-export async function createRoomFlow({ name, sb, bb, maxPlayers = 9, settleTimeMins = 30, rakePercent = 5, clubId = 0 }) {
+/**
+ * 创建房间(clubId>0 = 俱乐部房,需群主/管理员)。返回 {roomId,name,sb,bb,...}
+ * params 全量透传后端 RoomRules.parse(对齐老德州建房参数):
+ *   sb / maxPlayers / settleTimeMins / rakePercent / inChip / inMinRate / inMaxRate /
+ *   opTimeSec / ante / straddleOn / insuranceOn / muckOn / vpOn / autoStartNum /
+ *   gameMinTime / aheadLeaveOn / ipLimitOn / gpsLimitOn / jackpotOn / delayOn / clubId
+ */
+export async function createRoomFlow(params = {}) {
   const sock = await ensureSocket()
-  const res = await sock.request(MSG.CREATE_ROOM,
-    { name, sb, bb, maxPlayers, settleTimeMins, rakePercent, clubId },
+  const res = await sock.request(MSG.CREATE_ROOM, { clubId: 0, ...params },
     { resType: MSG.CREATE_ROOM_RES })
   return res.data
+}
+
+/** 买保险(领先方,amount=0 放弃) */
+export async function insuranceBuy(roomId, amount) {
+  const sock = await ensureSocket()
+  sock.send(MSG.INSURANCE_BUY, { amount }, roomId)
 }
 
 // ---------------------------------------------------------------
@@ -328,6 +340,10 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
     stage: d.stage,
   }))
   on(MSG.SETTLE, (d) => emit('recvWinner', buildWinner(d)))
+
+  // ---- 保险(河牌保险,两人全下跑马):报价/决定/结算透传视图层 ----
+  on(MSG.INSURANCE_OFFER, (d) => emit('recvInsuranceOffer', d))
+  on(MSG.INSURANCE_RESULT, (d) => emit('recvInsuranceResult', d))
 
   // ---- 座位变动 ----
   on(MSG.PLAYER_SIT, (d) => emit('recvSeatDown', {
