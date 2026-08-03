@@ -34,9 +34,9 @@ const BASE = process.env.PROBE_URL || 'http://localhost:5173'
 
   // 1. 登录 → 大厅 → 创建房间 → 进桌 → 坐下 → 带入
   await page.goto(BASE + '/#/login')
-  await page.waitForSelector('.input-row input', { timeout: 15000 })
-  await page.fill('.input-row input', '站起测试')
-  await page.click('.login-btn')
+  await page.waitForSelector('.dev-edit', { timeout: 15000 })
+  await page.fill('.dev-edit', '站起测试')
+  await page.click('.dev-btn')
   await page.waitForURL('**/#/hall', { timeout: 10000 })
   await page.click('.create-btn')
   await page.waitForSelector('.c-confirm')

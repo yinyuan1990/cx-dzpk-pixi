@@ -4,11 +4,12 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   clubListFlow, clubMembersFlow, clubApplyListFlow, clubReviewFlow,
   clubSetRoleFlow, clubKickFlow, clubQuitFlow, clubDissolveFlow,
-  roomListFlow, createRoomFlow, getLoginInfo,
+  roomListFlow, getLoginInfo,
   clubScoreOpFlow, clubScoreLogsFlow,
 } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
+import CreateRoomPopup from '../components/CreateRoomPopup.vue'
 
 // 俱乐部详情:牌局(该俱乐部房间) / 成员(角色管理) / 审批。
 // 权限对齐扯旋:建房=群主/管理员;设管理员=群主;设合伙人=群主或(管理/合伙人的直推);
@@ -62,27 +63,11 @@ function onEnter(tb) {
   router.push('/table/' + tb.roomId)
 }
 
-// 建房(群主/管理员)
+// 建房(群主/管理员):与大厅共用 CreateRoomPopup,全量参数 + 后台档位驱动
 const showCreate = ref(false)
-const creating = ref(false)
-const form = ref({ name: '', sb: 50, bb: 100, maxPlayers: 9, settleTimeMins: 30, rakePercent: 5 })
-const BLIND_PRESETS = [
-  { sb: 50, bb: 100 }, { sb: 100, bb: 200 }, { sb: 250, bb: 500 },
-  { sb: 500, bb: 1000 }, { sb: 1000, bb: 2000 },
-]
-const SETTLE_PRESETS = [30, 45, 60, 90, 120]
-async function onCreate() {
-  if (creating.value) return
-  creating.value = true
-  try {
-    const room = await createRoomFlow({ ...form.value, name: form.value.name || undefined, clubId })
-    showCreate.value = false
-    onEnter({ roomId: room.roomId, name: room.name, sb: room.sb, bb: room.bb })
-  } catch (e) {
-    toast(e.message || '创建失败', false)
-  } finally {
-    creating.value = false
-  }
+function onCreated(room) {
+  showCreate.value = false
+  onEnter({ roomId: room.roomId, name: room.name, sb: room.sb, bb: room.bb })
 }
 
 // ===== 成员 =====
@@ -374,37 +359,15 @@ onBeforeUnmount(() => clearInterval(pollTimer))
       </div>
     </div>
 
-    <!-- 建牌局弹窗(与大厅一致,多挂 clubId) -->
-    <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
-      <div class="create-box">
-        <div class="c-title">创建俱乐部牌局</div>
-        <div class="c-label">牌局名称</div>
-        <input v-model="form.name" class="c-input" :placeholder="(club ? club.name : '') + '的牌局'" maxlength="16" />
-        <div class="c-label">盲注</div>
-        <div class="c-opts">
-          <button v-for="p in BLIND_PRESETS" :key="p.bb" class="c-opt" :class="{ on: form.sb === p.sb }"
-            @click="form.sb = p.sb; form.bb = p.bb">{{ formatKNotation(p.sb) }}/{{ formatKNotation(p.bb) }}</button>
-        </div>
-        <div class="c-label">人数</div>
-        <div class="c-opts">
-          <button v-for="n in [2, 6, 9]" :key="n" class="c-opt" :class="{ on: form.maxPlayers === n }"
-            @click="form.maxPlayers = n">{{ n }}人</button>
-        </div>
-        <div class="c-label">结算时间</div>
-        <div class="c-opts">
-          <button v-for="mm in SETTLE_PRESETS" :key="mm" class="c-opt" :class="{ on: form.settleTimeMins === mm }"
-            @click="form.settleTimeMins = mm">{{ mm }}分钟</button>
-        </div>
-        <div class="c-label">抽水(分给群主/合伙人)</div>
-        <div class="c-opts">
-          <button v-for="r in [0, 3, 5, 10]" :key="r" class="c-opt" :class="{ on: form.rakePercent === r }"
-            @click="form.rakePercent = r">{{ r }}%</button>
-        </div>
-        <button class="c-confirm" :disabled="creating" @click="onCreate">
-          {{ creating ? '创建中…' : '创建' }}
-        </button>
-      </div>
-    </div>
+    <!-- 建牌局弹窗(与大厅共用组件,全量参数,多挂 clubId) -->
+    <CreateRoomPopup
+      :show="showCreate"
+      :club-id="clubId"
+      title="创建俱乐部牌局"
+      :name-placeholder="(club ? club.name : '') + '的牌局'"
+      @close="showCreate = false"
+      @created="onCreated"
+    />
 
     <!-- 积分操作弹窗(增发/核销/上分/下分/赠送) -->
     <div v-if="scoreOp" class="create-mask" @click.self="scoreOp = null">

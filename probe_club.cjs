@@ -12,9 +12,9 @@ async function login(ctx, nick) {
   page.on('pageerror', (e) => console.error(`[${nick}] pageerror:`, e.message))
   page.on('console', (m) => { if (m.type() === 'error') console.log(`[${nick}] console.err:`, m.text()) })
   await page.goto(BASE + '/#/login')
-  await page.waitForSelector('.input-row input', { timeout: 45000 })
-  await page.fill('.input-row input', nick)
-  await page.click('.login-btn')
+  await page.waitForSelector('.dev-edit', { timeout: 45000 })
+  await page.fill('.dev-edit', nick)
+  await page.click('.dev-btn')
   await page.waitForURL('**/#/hall', { timeout: 45000 }).catch(async (e) => {
     const err = await page.evaluate(() => {
       const el = document.querySelector('.err, .login-err, .hall-err')
@@ -26,7 +26,7 @@ async function login(ctx, nick) {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true })
+  const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const ctxA = await browser.newContext({ viewport: { width: 420, height: 900 } })
   const ctxB = await browser.newContext({ viewport: { width: 420, height: 900 } })
 

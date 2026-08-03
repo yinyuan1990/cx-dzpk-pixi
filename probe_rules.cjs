@@ -16,9 +16,9 @@ const BASE = process.env.PROBE_URL || 'http://localhost:5173'
 
   // 登录
   await page.goto(BASE + '/#/login')
-  await page.waitForSelector('.input-row input', { timeout: 15000 })
-  await page.fill('.input-row input', '规则测试')
-  await page.click('.login-btn')
+  await page.waitForSelector('.dev-edit', { timeout: 15000 })
+  await page.fill('.dev-edit', '规则测试')
+  await page.click('.dev-btn')
   await page.waitForURL('**/#/hall', { timeout: 10000 })
 
   // ① 建房弹窗全量参数检查(等到分组渲染齐,防 HMR/慢转换下查询过早)

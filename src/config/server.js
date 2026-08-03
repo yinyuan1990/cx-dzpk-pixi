@@ -16,6 +16,12 @@ export function resolveWsUrl() {
   return DEFAULT_WS
 }
 
+// HTTP API 基址(账号登录/注册用):跟随 WS 的主机,保证连谁的 WS 就调谁的 HTTP
+export function resolveHttpBase() {
+  const ws = resolveWsUrl() // ws(s)://host[:port]/ws/dzpk
+  return ws.replace(/^ws/, 'http').replace(/\/ws\/dzpk$/, '')
+}
+
 // i18n locale 标识(保留)
 export const LANG_ID = {
   'zh-CN': 0,

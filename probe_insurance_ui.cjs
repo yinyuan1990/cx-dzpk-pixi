@@ -10,9 +10,9 @@ const BASE = 'http://localhost:5173'
   page.on('pageerror', (e) => console.log('[pageerror]', e.message))
 
   await page.goto(BASE + '/#/login')
-  await page.waitForSelector('.input-row input', { timeout: 15000 })
-  await page.fill('.input-row input', '保险UI')
-  await page.click('.login-btn')
+  await page.waitForSelector('.dev-edit', { timeout: 15000 })
+  await page.fill('.dev-edit', '保险UI')
+  await page.click('.dev-btn')
   await page.waitForURL('**/#/hall', { timeout: 10000 })
   await page.click('.create-btn')
   await page.waitForSelector('.c-confirm')

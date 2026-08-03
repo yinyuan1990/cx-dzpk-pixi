@@ -12,9 +12,9 @@ const BASE = process.env.PROBE_URL || 'http://localhost:5173'
 
   // 1. 登录
   await page.goto(BASE + '/#/login')
-  await page.waitForSelector('.input-row input', { timeout: 15000 })
-  await page.fill('.input-row input', '测试员')
-  await page.click('.login-btn')
+  await page.waitForSelector('.dev-edit', { timeout: 15000 })
+  await page.fill('.dev-edit', '测试员')
+  await page.click('.dev-btn')
   await page.waitForURL('**/#/hall', { timeout: 10000 })
   await page.waitForTimeout(800)
   await page.screenshot({ path: 'probe_hall.png' })

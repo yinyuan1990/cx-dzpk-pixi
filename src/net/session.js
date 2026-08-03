@@ -5,6 +5,7 @@
 //   recvWinner/recvSeatDown/recvLeave...),TableView 的动画链与 tableModel 事件语义得以完整复用。
 import { DzpkSocket } from './socket.js'
 import { cardStrToId } from './tableModel.js'
+import { resolveHttpBase } from '../config/server.js'
 
 // 与后端 MsgType.java 一一对应
 export const MSG = {
@@ -16,7 +17,7 @@ export const MSG = {
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
-  CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431,
+  CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431, GPS_REPORT: 432,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
@@ -69,13 +70,74 @@ async function doLogin(sock) {
 export async function loginFlow({ nickname, token } = {}) {
   _cred = { nickname: nickname || '玩家', token: token || '' }
   const sock = await ensureSocket()
-  return doLogin(sock)
+  const login = await doLogin(sock)
+  startGpsReport() // GPS 防火牌:登录即开始定时上报(浏览器拒绝定位则静默不报)
+  return login
 }
 
 export function logout() {
   if (_sock) { _sock.close(); _sock = null }
   _login = null
   _cred = null
+  stopGpsReport()
+}
+
+// ==================== 账号密码登录/注册(HTTP → 主服 JWT) ====================
+
+async function authRequest(path, body) {
+  const res = await fetch(resolveHttpBase() + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.code !== 0) throw new Error(data.msg || '登录服务异常')
+  return data // { code:0, token, userId, nickname, diamond }
+}
+
+/** 账号密码登录:HTTP 换 JWT 后自动走 WS 登录。返回 WS 登录信息 + token */
+export async function accountLoginFlow({ phone, password }) {
+  const auth = await authRequest('/api/auth/login', { phone, password })
+  const login = await loginFlow({ nickname: auth.nickname, token: auth.token })
+  return { ...login, token: auth.token }
+}
+
+/** 注册(注册成功即自动登录) */
+export async function accountRegisterFlow({ phone, password, nickname }) {
+  const auth = await authRequest('/api/auth/register', { phone, password, nickname })
+  const login = await loginFlow({ nickname: auth.nickname, token: auth.token })
+  return { ...login, token: auth.token }
+}
+
+// ==================== GPS 上报(防火牌,对齐扯旋 5 秒一报) ====================
+
+let _gpsWatchId = null
+let _gpsTimer = null
+let _gpsLoc = null
+
+function startGpsReport() {
+  if (_gpsTimer || typeof navigator === 'undefined' || !navigator.geolocation) return
+  try {
+    _gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => { _gpsLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude } },
+      () => { /* 用户拒绝定位:不报,开 GPS 限制的桌坐下会被拒 */ },
+      { enableHighAccuracy: false, maximumAge: 30000 },
+    )
+  } catch { return }
+  _gpsTimer = setInterval(() => {
+    if (_gpsLoc && _sock && _sock.connected && _login) {
+      try { _sock.send(MSG.GPS_REPORT, { ..._gpsLoc }) } catch { /* noop */ }
+    }
+  }, 5000)
+}
+
+function stopGpsReport() {
+  if (_gpsTimer) { clearInterval(_gpsTimer); _gpsTimer = null }
+  if (_gpsWatchId != null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(_gpsWatchId)
+    _gpsWatchId = null
+  }
+  _gpsLoc = null
 }
 
 /** 房间列表(clubId=0 公开大厅,>0 该俱乐部的房间)。返回 [{roomId,name,clubId,sb,bb,...}] */
