@@ -58,6 +58,7 @@ async function doLogin(sock) {
   _login = {
     userId: res.data.userId,
     nickname: res.data.nickname,
+    avatar: res.data.avatar || '', // 主服头像 URL(游客为空)
     balance: res.data.balance ?? 0,
     diamond: res.data.diamond ?? 0, // 平台公用钻石(主服账号才有,游客恒 0)
   }
@@ -416,7 +417,7 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
 
   // ---- 座位变动 ----
   on(MSG.PLAYER_SIT, (d) => emit('recvSeatDown', {
-    seatID: d.seat, userID: d.userId, nick: d.nickname || '', headPic: '', chips: d.stack ?? 0, sex: 0,
+    seatID: d.seat, userID: d.userId, nick: d.nickname || '', headPic: d.avatar || '', chips: d.stack ?? 0, sex: 0,
   }))
   on(MSG.PLAYER_STAND, (d) => {
     // 自己真正站起(含 pending 局末生效):同步钱包余额 + 清本地座位

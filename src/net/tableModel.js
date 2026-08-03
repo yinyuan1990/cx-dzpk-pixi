@@ -101,7 +101,7 @@ export function mapSnapshot(snap) {
       occupied: true,
       userId: p.userId,
       nick: p.nickname || '',
-      headPic: '',
+      headPic: p.avatar || '',
       chips: p.stack ?? 0,
       status: statusOf(p),
       bet: Math.max(0, p.betThisRound ?? 0),

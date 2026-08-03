@@ -42,7 +42,9 @@ export const useGameStore = defineStore('game', {
       this.setUser({
         userId: login.userId,
         nickname: login.nickname || '',
+        avatar: login.avatar || '',
         chips: login.balance || 0,
+        idou: login.diamond || 0,
       })
     },
   },

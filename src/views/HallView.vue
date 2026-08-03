@@ -114,7 +114,9 @@ function onTab(key) {
     <!-- 顶部:头像 / 昵称 / 余额 -->
     <div class="top">
       <div class="user">
-        <div class="avatar"></div>
+        <div class="avatar">
+          <img v-if="/^https?:\/\//.test(game.user.avatar)" :src="game.user.avatar" alt="" />
+        </div>
         <div class="uinfo">
           <div class="nick">{{ game.user.nickname || 'Player' }}</div>
           <div class="balance">
@@ -240,6 +242,12 @@ function onTab(key) {
   height: calc(96px * var(--s));
   border-radius: 50%;
   background: linear-gradient(135deg, #14d3b6, #08c0a0);
+  overflow: hidden;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .nick {
   font-size: calc(38px * var(--s));
