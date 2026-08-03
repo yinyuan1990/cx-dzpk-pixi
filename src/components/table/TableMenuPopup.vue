@@ -16,6 +16,7 @@ defineEmits([
   'seat-reserve',
   'seat-resume',
   'stats',
+  'gift',
   'dismiss',
   'leave-room',
   'clear',
@@ -57,6 +58,9 @@ const { t } = useI18n()
           </button>
           <button class="menu-row" @click="$emit('stats')">
             <span class="mr-icon">📊</span>{{ t('table.realtimeStats') }}
+          </button>
+          <button v-if="seated" class="menu-row" @click="$emit('gift')">
+            <span class="mr-icon">🎁</span>{{ t('table.sendGift') }}
           </button>
           <button v-if="isCreator" class="menu-row danger" @click="$emit('dismiss')">
             <span class="mr-icon">🗑</span>{{ t('table.dismissRoom') }}

@@ -123,6 +123,7 @@ export default {
     seatReserve: '留座暂离',
     seatResume: '回到座位',
     realtimeStats: '实时战绩',
+    sendGift: '送礼物',
     dismissRoom: '解散牌局',
     leaveRoom: '离开房间',
     leave: '离开牌桌',

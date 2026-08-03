@@ -30,7 +30,7 @@ import { playSound } from '../utils/sound'
 import { useSeatRotation } from '../composables/useSeatRotation'
 import { useTableBackground } from '../composables/useTableBackground'
 import { useGameStore } from '../stores/game.js'
-import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy, seatReserveLeave, seatReserveResume, realtimeStatsFlow, dismissRoomFlow } from '../net/session.js'
+import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy, seatReserveLeave, seatReserveResume, realtimeStatsFlow, dismissRoomFlow, giftListFlow, sendGiftFlow } from '../net/session.js'
 import { mapSnapshot, applyEvent, mapBoard, debugServerCard } from '../net/tableModel.js'
 import { formatKNotation } from '../utils/format'
 import { CARD_VALUES } from '../config/cards'
@@ -107,6 +107,8 @@ const myGrace = ref({ active: false, deadline: 0, leftSecs: 0 }) // 自己的放
 let graceTimer = null
 const fineConfirm = ref({ show: false, fine: 0, msg: '' })       // 盈利离桌罚金确认弹窗
 const statsPanel = ref({ show: false, loading: false, players: [] }) // 实时战绩面板
+// 真实送礼面板(对齐扯旋161/351):礼物列表来自后端配置,目标=其他在座玩家
+const giftPanel = ref({ show: false, loading: false, gifts: [], sel: null, targets: [], target: 0 })
 const isRoomCreator = computed(() => !!(tableModel && tableModel.creatorUserId && tableModel.creatorUserId === game.user.userId))
 
 function startGraceCountdown(deadline) {
@@ -364,16 +366,25 @@ function handleGameEvent(type, data) {
           errMsg.value = `${who}${data.kind === 'RUN_AWAY' ? '离线过久离桌' : '盈利提前离桌'},罚金 ${formatKNotation(data.amount)}`
           return
         }
-        // 牌局被解散(创建者/管理/后台):提示后回大厅
+        // 牌局被解散(创建者/管理/后台/停服维护):提示后回大厅
         if (type === 'recvDismissed') {
-          errMsg.value = '牌局已被解散'
-          setTimeout(() => onLeaveRoom(), 1500)
+          errMsg.value = data.reason === 'maintenance'
+            ? '服务器维护更新,牌局已结算,请稍后再来'
+            : '牌局已被解散'
+          setTimeout(() => onLeaveRoom(), 1800)
           return
         }
         // 群主钻石不足:牌局暂停警告
         if (type === 'recvDiamondWarning') {
           errMsg.value = data.msg || '群主钻石不足,牌局暂停'
           return
+        }
+        // 房间礼物广播(对齐扯旋351):提示条;动画在下方 P 分支;SCORE 扣带入由模型同步筹码
+        if (type === 'recvGift') {
+          const who = data.fromUserId === game.user.userId ? '你' : (data.fromNickname || `玩家${data.fromUserId}`)
+          errMsg.value = data.toNickname
+            ? `${who} 送给 ${data.toNickname}「${data.giftName}」`
+            : `${who} 送出「${data.giftName}」`
         }
         const P = pixiStage.value
         const m = applyEvent(tableModel, type, data)
@@ -417,6 +428,12 @@ function handleGameEvent(type, data) {
             //   后经 driveFromModel 清除（board=[] → clearCommunity；pots=[] → clearPots；pot=0）。
             //   头像/身家保留，等 recvReadyTime/recvStartInfor 开下一手。
             P.clearFolds(); P.clearBets(); P.clearShowdown(); P.clearAllins()
+          } else if (type === 'recvGift') {
+            // 礼物飞行+落点骨骼动画(animKey 未配动画时 playGift 内部静默跳过)
+            const anim = data.animKey || data.giftKey
+            const from = data.fromSeat
+            const to = data.toSeat != null ? data.toSeat : data.fromSeat
+            if (anim && from != null) P.playGift(from, to, anim)
           }
         }
         } catch (e) { console.error('[spectate] 事件前置动画异常', type, e) }
@@ -1343,6 +1360,43 @@ async function onOpenStats() {
   }
 }
 
+// 送礼(对齐扯旋161):列表来自后端 dz_gift_config,目标=其他在座玩家
+async function onOpenGift() {
+  showMenu.value = false
+  const targets = []
+  if (tableModel && Array.isArray(tableModel.seats)) {
+    for (const s of tableModel.seats) {
+      if (s && s.occupied && s.userId && s.userId !== game.user.userId) {
+        targets.push({ userId: s.userId, nick: s.nick || `玩家${s.userId}`, seat: s.seat })
+      }
+    }
+  }
+  if (!targets.length) { errMsg.value = '桌上没有其他玩家可送'; return }
+  giftPanel.value = { show: true, loading: true, gifts: [], sel: null, targets, target: targets[0].userId }
+  try {
+    const gifts = await giftListFlow()
+    giftPanel.value.gifts = gifts
+    giftPanel.value.sel = gifts.length ? gifts[0].id : null
+  } catch (e) {
+    giftPanel.value.show = false
+    errMsg.value = e.message || '礼物列表加载失败'
+  } finally {
+    giftPanel.value.loading = false
+  }
+}
+
+async function onSendGift() {
+  const gp = giftPanel.value
+  const tgt = game.enterTarget
+  if (!gp.sel || !tgt) return
+  try {
+    await sendGiftFlow({ roomId: tgt.roomId, giftId: gp.sel, toUserId: gp.target })
+    gp.show = false // 成功与否走 recvGift 广播/ERROR 提示
+  } catch (e) {
+    errMsg.value = e.message || '送礼失败'
+  }
+}
+
 // 解散牌局(创建者/俱乐部管理):全房收 recvDismissed 回大厅
 async function onDismissRoom() {
   showMenu.value = false
@@ -1605,7 +1659,45 @@ if (import.meta.env.DEV) {
         </div>
       </div>
 
-      <!-- 周期结算面板(循环玩法):到点结算不离座,倒计时内补带入开新周期,超时自动站起 -->
+      <!-- 送礼面板(对齐扯旋161/351):选礼物+受赠人,扣费源由后端配置决定 -->
+      <div v-if="giftPanel.show" class="stats-mask" @click.self="giftPanel.show = false">
+        <div class="gift-box">
+          <div class="stats-title">送礼物</div>
+          <div v-if="giftPanel.loading" class="stats-loading">加载中…</div>
+          <template v-else>
+            <div class="gift-label">选择礼物</div>
+            <div class="gift-grid">
+              <button
+                v-for="g in giftPanel.gifts"
+                :key="g.id"
+                class="gift-item"
+                :class="{ on: giftPanel.sel === g.id }"
+                @click="giftPanel.sel = g.id"
+              >
+                <span class="g-name">{{ g.name }}</span>
+                <span class="g-cost">{{ g.costScore }}</span>
+              </button>
+            </div>
+            <div v-if="!giftPanel.gifts.length" class="stats-loading">暂无上架礼物</div>
+            <div class="gift-label">送给</div>
+            <div class="gift-grid">
+              <button
+                v-for="p in giftPanel.targets"
+                :key="p.userId"
+                class="gift-item"
+                :class="{ on: giftPanel.target === p.userId }"
+                @click="giftPanel.target = p.userId"
+              >
+                <span class="g-name">{{ p.nick }}</span>
+              </button>
+            </div>
+            <button class="gift-send" :disabled="!giftPanel.sel || !giftPanel.target" @click="onSendGift">送出</button>
+          </template>
+          <button class="stats-close" @click="giftPanel.show = false">关闭</button>
+        </div>
+      </div>
+
+      <!-- 周期结算面板(循环玩法):到点结算不离座 倒计时内补带入开新周期 超时自动站起 -->
       <div v-if="periodSettle.show" class="ps-mask">
         <div class="ps-box">
           <div class="ps-title">{{ periodSettle.data && periodSettle.data.reason === 'busted' ? t('table.psBusted') : t('table.psTitle') }}</div>
@@ -1641,6 +1733,7 @@ if (import.meta.env.DEV) {
         @seat-reserve="onSeatReserveLeave"
         @seat-resume="onSeatReserveResume"
         @stats="onOpenStats"
+        @gift="onOpenGift"
         @dismiss="onDismissRoom"
         @leave-room="onLeaveRoom"
         @rotate-test="onOpenRotateTest"
@@ -2036,6 +2129,65 @@ if (import.meta.env.DEV) {
   opacity: 0.5;
   cursor: default;
 }
+/* ===== 送礼面板 ===== */
+.gift-box {
+  width: calc(760px * var(--s));
+  max-height: 82%;
+  overflow-y: auto;
+  background: #20262e;
+  border-radius: calc(24px * var(--s));
+  padding: calc(36px * var(--s));
+}
+.gift-label {
+  font-size: calc(30px * var(--s));
+  color: #8e9395;
+  margin: calc(18px * var(--s)) 0 calc(12px * var(--s));
+}
+.gift-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: calc(14px * var(--s));
+}
+.gift-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--s));
+  padding: calc(16px * var(--s)) calc(8px * var(--s));
+  border: calc(3px * var(--s)) solid #39424d;
+  border-radius: calc(14px * var(--s));
+  background: #273039;
+  cursor: pointer;
+}
+.gift-item.on {
+  border-color: rgb(1, 175, 168);
+  background: rgba(0, 68, 65, 0.45);
+}
+.g-name {
+  color: #e8edf2;
+  font-size: calc(30px * var(--s));
+}
+.g-cost {
+  color: #ffd76a;
+  font-size: calc(26px * var(--s));
+}
+.gift-send {
+  width: 100%;
+  height: calc(96px * var(--s));
+  margin-top: calc(24px * var(--s));
+  border: none;
+  border-radius: calc(16px * var(--s));
+  background: rgb(1, 175, 168);
+  color: #06241f;
+  font-size: calc(38px * var(--s));
+  font-weight: 700;
+  cursor: pointer;
+}
+.gift-send:disabled {
+  background: #39424d;
+  color: #8e9395;
+}
+
 /* 周期结算面板 */
 .ps-mask {
   position: absolute;

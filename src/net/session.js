@@ -12,6 +12,7 @@ export const MSG = {
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
   MY_RECORDS: 411, INSURANCE_BUY: 412,
   SEAT_RESERVE_LEAVE: 413, SEAT_RESERVE_RESUME: 414, REALTIME_STATS: 415, DISMISS_ROOM: 416,
+  GIFT_LIST: 417, GIFT_SEND: 418,
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
@@ -27,6 +28,7 @@ export const MSG = {
   CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   DIAMOND_WARNING: 488, CLUB_SCORE_LOGS_RES: 489,
+  GIFT_LIST_RES: 490, ROOM_GIFT: 491,
   ERROR: 499,
 }
 
@@ -375,8 +377,10 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
   on(MSG.RUN_AWAY_FINE, (d) => emit('recvFine', d))             // {userId,kind:EARLY_LEAVE|RUN_AWAY,amount}
   on(MSG.PLAYER_OFFLINE, (d) => emit('recvOffline', d))         // {userId,seat}
   on(MSG.PLAYER_ONLINE, (d) => emit('recvOnline', d))           // {userId,seat}
-  on(MSG.ROOM_DISMISSED, (d) => emit('recvDismissed', d))       // {byUserId}
+  on(MSG.ROOM_DISMISSED, (d) => emit('recvDismissed', d))       // {byUserId,reason:"dismiss|maintenance"}
   on(MSG.DIAMOND_WARNING, (d) => emit('recvDiamondWarning', d)) // {clubId,needed,msg}
+  // 房间礼物广播(对齐扯旋351):{fromUserId,fromSeat,toUserId?,toSeat?,giftKey,animKey,giftName,cost,costType,fromStack}
+  on(MSG.ROOM_GIFT, (d) => emit('recvGift', d))
 
   // ---- 房态:WAITING(人不够) → 延时清台;FINISHED → 下一手 HAND_START 自会清 ----
   let waitingTimer = null
@@ -522,6 +526,23 @@ export async function realtimeStatsFlow(roomId) {
 export async function dismissRoomFlow(roomId) {
   const sock = await ensureSocket()
   sock.send(MSG.DISMISS_ROOM, {}, roomId)
+}
+
+// ---------------------------------------------------------------
+// 房间送礼(对齐扯旋 161/351)
+// ---------------------------------------------------------------
+
+/** 上架礼物列表:[{id,giftKey,name,costScore,costType,animKey,sortNo}] */
+export async function giftListFlow() {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.GIFT_LIST, {}, { resType: MSG.GIFT_LIST_RES })
+  return (res.data && res.data.gifts) || []
+}
+
+/** 房间送礼:toUserId=0 全场;成功全房收 recvGift 广播(含自己),失败走 ERROR 提示 */
+export async function sendGiftFlow({ roomId, giftId, toUserId = 0 }) {
+  const sock = await ensureSocket()
+  sock.send(MSG.GIFT_SEND, { giftId, toUserId }, roomId)
 }
 
 // ---------------------------------------------------------------

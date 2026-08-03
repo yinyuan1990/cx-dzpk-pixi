@@ -373,6 +373,14 @@ export function applyEvent(m, type, d) {
       if (s) s.offline = false
       break
     }
+    case 'recvGift': {
+      // 送礼扣桌面带入(costType=SCORE)时同步发送方筹码;其它扣费源桌面不变
+      if (d.costType === 'SCORE') {
+        const s = seatByUid(d.fromUserId)
+        if (s && d.fromStack != null) s.chips = d.fromStack
+      }
+      break
+    }
     case 'recvRoundFinish': {
       // 清台(人不够进 WAITING 后延时触发):清公共牌/底池/本轮下注/动作状态
       next.gamestatus = -2
