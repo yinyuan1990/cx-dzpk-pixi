@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
-import { roomListFlow, createRoomFlow, getLoginInfo, myRecordsFlow } from '../net/session.js'
+import { roomListFlow, createRoomFlow, getLoginInfo, myRecordsFlow, roomOptionsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
 
@@ -83,30 +83,64 @@ const form = ref({
   gameMinTime: 0,      // 最短上桌(分钟,0=不限;>0 时关闭提前离桌)
   autoStartNum: 2,     // 自动开局人数
 })
-const BLIND_PRESETS = [
+// 可选档全部来自后台配置(419 ROOM_OPTIONS,管理台「牌局参数」页可改);以下仅为拉取失败的兜底
+const BLIND_PRESETS = ref([
   { sb: 50, bb: 100 },
   { sb: 100, bb: 200 },
   { sb: 250, bb: 500 },
   { sb: 500, bb: 1000 },
   { sb: 1000, bb: 2000 },
-]
-const SETTLE_PRESETS = [30, 45, 60, 90, 120]
-const OPTIME_PRESETS = [10, 15, 20, 30]
-const MAXRATE_PRESETS = [
+])
+const SETTLE_PRESETS = ref([30, 45, 60, 90, 120])
+const OPTIME_PRESETS = ref([10, 15, 20, 30])
+const MAXRATE_PRESETS = ref([
   { rate: 2, label: '200BB' },
   { rate: 4, label: '400BB' },
   { rate: 10, label: '1000BB' },
-]
+])
+const RAKE_PRESETS = ref([0, 3, 5, 10])
 const ANTE_MODES = [
   { v: 0, label: '无' },
   { v: 1, label: '半盲' },
   { v: 2, label: '1大盲' },
 ]
-const MINTIME_PRESETS = [
+const MINTIME_PRESETS = ref([
   { v: 0, label: '不限' },
   { v: 30, label: '30分钟' },
   { v: 60, label: '60分钟' },
-]
+])
+
+// 打开建房弹窗时拉取后台档位;当前选中值不在档内时吸附到第一档
+async function openCreate() {
+  showCreate.value = true
+  try {
+    const o = await roomOptionsFlow()
+    if (Array.isArray(o.blinds) && o.blinds.length) {
+      BLIND_PRESETS.value = o.blinds.map((sb) => ({ sb: Number(sb), bb: Number(sb) * 2 }))
+    }
+    if (Array.isArray(o.settleTimes) && o.settleTimes.length) SETTLE_PRESETS.value = o.settleTimes.map(Number)
+    if (Array.isArray(o.opTimes) && o.opTimes.length) OPTIME_PRESETS.value = o.opTimes.map(Number)
+    if (Array.isArray(o.maxRates) && o.maxRates.length) {
+      MAXRATE_PRESETS.value = o.maxRates.map((r) => ({ rate: Number(r), label: `${Number(r) * 100}BB` }))
+    }
+    if (Array.isArray(o.rakePercents) && o.rakePercents.length) RAKE_PRESETS.value = o.rakePercents.map(Number)
+    if (Array.isArray(o.minTimes) && o.minTimes.length) {
+      MINTIME_PRESETS.value = o.minTimes.map((v) => ({ v: Number(v), label: Number(v) === 0 ? '不限' : `${v}分钟` }))
+    }
+    const f = form.value
+    if (!BLIND_PRESETS.value.some((p) => p.sb === f.sb)) {
+      f.sb = BLIND_PRESETS.value[0].sb
+      f.bb = BLIND_PRESETS.value[0].bb
+    }
+    if (!SETTLE_PRESETS.value.includes(f.settleTimeMins)) f.settleTimeMins = SETTLE_PRESETS.value[0]
+    if (!OPTIME_PRESETS.value.includes(f.opTimeSec)) f.opTimeSec = OPTIME_PRESETS.value[0]
+    if (!MAXRATE_PRESETS.value.some((p) => p.rate === f.inMaxRate)) f.inMaxRate = MAXRATE_PRESETS.value[0].rate
+    if (!RAKE_PRESETS.value.includes(f.rakePercent)) f.rakePercent = RAKE_PRESETS.value[0]
+    if (!MINTIME_PRESETS.value.some((p) => p.v === f.gameMinTime)) f.gameMinTime = MINTIME_PRESETS.value[0].v
+  } catch (e) {
+    console.warn('[hall] 建房档位拉取失败,用默认档', e)
+  }
+}
 // 玩法开关(chips 行)
 const RULE_SWITCHES = [
   { key: 'straddleOn', label: '抓头' },
@@ -224,7 +258,7 @@ function onTab(key) {
         <span class="ftext" :data-text="f">{{ f }}</span>
         <span class="fline" v-show="activeFilter === f"></span>
       </button>
-      <button class="create-btn" @click="showCreate = true">+ {{ t('hall.create') }}</button>
+      <button class="create-btn" @click="openCreate">+ {{ t('hall.create') }}</button>
     </div>
 
     <!-- 牌局列表 -->
@@ -320,7 +354,7 @@ function onTab(key) {
         <div class="c-label">{{ t('hall.rake') }}</div>
         <div class="c-opts">
           <button
-            v-for="r in [0, 3, 5, 10]"
+            v-for="r in RAKE_PRESETS"
             :key="r"
             class="c-opt"
             :class="{ on: form.rakePercent === r }"

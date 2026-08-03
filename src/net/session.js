@@ -12,7 +12,7 @@ export const MSG = {
   SIT_DOWN: 406, BUY_IN: 407, STAND_UP: 408, ACTION: 409, SNAPSHOT: 410,
   MY_RECORDS: 411, INSURANCE_BUY: 412,
   SEAT_RESERVE_LEAVE: 413, SEAT_RESERVE_RESUME: 414, REALTIME_STATS: 415, DISMISS_ROOM: 416,
-  GIFT_LIST: 417, GIFT_SEND: 418,
+  GIFT_LIST: 417, GIFT_SEND: 418, ROOM_OPTIONS: 419,
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
@@ -28,7 +28,7 @@ export const MSG = {
   CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   DIAMOND_WARNING: 488, CLUB_SCORE_LOGS_RES: 489,
-  GIFT_LIST_RES: 490, ROOM_GIFT: 491,
+  GIFT_LIST_RES: 490, ROOM_GIFT: 491, ROOM_OPTIONS_RES: 492,
   ERROR: 499,
 }
 
@@ -531,6 +531,13 @@ export async function dismissRoomFlow(roomId) {
 // ---------------------------------------------------------------
 // 房间送礼(对齐扯旋 161/351)
 // ---------------------------------------------------------------
+
+/** 建房参数可选档(后台可配):{settleTimes,blinds(小盲,大盲=×2),opTimes,maxRates,minTimes,rakePercents} */
+export async function roomOptionsFlow() {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.ROOM_OPTIONS, {}, { resType: MSG.ROOM_OPTIONS_RES })
+  return res.data || {}
+}
 
 /** 上架礼物列表:[{id,giftKey,name,costScore,costType,animKey,sortNo}] */
 export async function giftListFlow() {
