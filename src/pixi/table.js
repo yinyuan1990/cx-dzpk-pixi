@@ -725,7 +725,8 @@ export function createTable(app, { t, onPot } = {}) {
     // tx,ty = tween target (sitdownWithAni rides the seat node to its slot over ~0.11s)
     return {
       container: c, player: p, userId: p.userID ?? p.userId, side: seat.side,
-      cardSprites, cardType, lay, avatarNodes,
+      cardSprites, cardType, lay, avatarNodes, name,
+      wasSelf: !!p.isSelf, // isSelf 布局快照:update 分支检测他人→自己(或反向)时重排大/小牌
       score, scoreBg: bg, badge, statusBadge, // 原地更新身家/动作徽标/状态字用
       tx: seat.cx, ty: seat.cy,
     }
@@ -894,6 +895,19 @@ export function createTable(app, { t, onPot } = {}) {
         if (view.side !== seat.side) {
           view.side = seat.side
           relayoutCards(view, seat)
+        }
+        // isSelf 翻转(自己坐下时 seatDown 广播先于坐下回包 → 曾以"他人"建座):
+        //   大/小牌布局、昵称/身家纵位都按新身份重排,否则自己的手牌一直停留在小牌尺寸。
+        if (view.wasSelf !== !!seat.player.isSelf) {
+          view.wasSelf = !!seat.player.isSelf
+          relayoutCards(view, seat)
+          if (view.name && !view.name._destroyed) {
+            view.name.y = seat.player.isSelf ? NAME_DY.self : NAME_DY.other
+          }
+          const plate = view.score && view.score.parent
+          if (plate && !plate._destroyed) {
+            plate.y = seat.player.isSelf ? SCORE_DY.self : SCORE_DY.other
+          }
         }
         const cards = Array.isArray(seat.player.cards) ? seat.player.cards : []
         // 中途坐下未入局：cards=[] → 隐藏残留牌背 + 牌型字（对齐 Unity GetEnptyHandCards）

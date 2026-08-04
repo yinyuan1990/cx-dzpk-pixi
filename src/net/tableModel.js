@@ -119,6 +119,7 @@ export function mapSnapshot(snap) {
 
   const leftMs = snap.actionDeadline ? snap.actionDeadline - Date.now() : 0
   return {
+    myUserId: me ?? null, // 供增量事件(recvSeatDown)判断"坐下的是不是自己"
     seatCount,
     seats,
     board: (snap.board || []).map(cardStrToId).filter((c) => c >= 0),
@@ -282,7 +283,10 @@ export function applyEvent(m, type, d) {
       const i = d.seatID
       if (seat(i)) {
         const prev = seat(i)
-        const isSelf = !!(prev.isHero || next.mySeatID === i || (prev.userId != null && prev.userId === d.userID))
+        // ★必须优先比对自己的 userId:自己坐下时服务器广播可能先于坐下回包到达,
+        //   此时 prev.isHero=false / mySeatID=-1 → 曾把自己建成"他人"座位(小牌布局)。
+        const isSelf = !!((next.myUserId != null && d.userID === next.myUserId)
+          || prev.isHero || next.mySeatID === i)
         const chips = d.chips ?? 0
         let status = chips <= 0 ? 18 : 8 // 坐下未带入=占座(18);带着筹码=等下一手(8)
         if (isSelf && isWaitingStatus(prev.status)) status = prev.status
