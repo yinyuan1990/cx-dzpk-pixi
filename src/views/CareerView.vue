@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import HallBottomBar from '../components/HallBottomBar.vue'
 import HallTopBar from '../components/HallTopBar.vue'
+import PullRefresh from '../components/PullRefresh.vue'
 import { getLoginInfo, myRecordsFlow } from '../net/session.js'
 import { formatKNotation } from '../utils/format'
 
@@ -14,16 +15,37 @@ const data = ref({ records: [], stats: {} })
 const errMsg = ref('')
 const REASON_TXT = { period: '周期结算', standup: '站起', leave: '离房', buyin_timeout: '超时站起' }
 
+// 分页:limit 递增重拉(后端按 id 倒序,cap 500);拉满 limit 说明可能还有下一页
+const PAGE = 20
+const limit = ref(PAGE)
+const hasMore = ref(false)
+const loadingMore = ref(false)
+
+async function loadRecords() {
+  try {
+    errMsg.value = ''
+    const d = await myRecordsFlow(limit.value)
+    data.value = d
+    hasMore.value = (d.records || []).length >= limit.value && limit.value < 500
+  } catch (e) {
+    errMsg.value = e.message || '战绩加载失败'
+  }
+}
+async function refresh() {
+  limit.value = PAGE
+  await loadRecords()
+}
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  limit.value += PAGE
+  try { await loadRecords() } finally { loadingMore.value = false }
+}
+
 onMounted(async () => {
   if (!getLoginInfo()) { router.replace('/login'); return }
   loading.value = true
-  try {
-    data.value = await myRecordsFlow(50)
-  } catch (e) {
-    errMsg.value = e.message || '战绩加载失败'
-  } finally {
-    loading.value = false
-  }
+  try { await loadRecords() } finally { loading.value = false }
 })
 
 function recTime(ts) {
@@ -41,7 +63,7 @@ function signed(n) {
   <div class="stage-root career">
     <HallTopBar />
 
-    <div class="cr-body">
+    <PullRefresh class="cr-body" :on-refresh="refresh">
       <div class="cr-stats" v-if="data.stats && data.stats.sessions > 0">
         <div class="cs-item"><span>场次</span><b>{{ data.stats.sessions }}</b></div>
         <div class="cs-item"><span>总手数</span><b>{{ data.stats.totalHands }}</b></div>
@@ -64,8 +86,10 @@ function signed(n) {
           <div class="ci-r" :class="{ win: r.profit > 0, lose: r.profit < 0 }">{{ signed(r.profit) }}</div>
         </div>
         <div v-if="data.records.length === 0" class="cr-empty">还没有完赛记录,打一局吧</div>
+        <div v-else-if="hasMore" class="cr-more" @click="loadMore">{{ loadingMore ? '加载中…' : '加载更多' }}</div>
+        <div v-else class="cr-nomore">没有更多了</div>
       </template>
-    </div>
+    </PullRefresh>
 
     <HallBottomBar active="career" />
   </div>
@@ -143,5 +167,18 @@ function signed(n) {
   color: #9a9a9c;
   font-size: calc(34px * var(--s));
   padding: calc(100px * var(--s)) 0;
+}
+.cr-more {
+  text-align: center;
+  color: #08a88c;
+  font-size: calc(30px * var(--s));
+  padding: calc(24px * var(--s)) 0 calc(40px * var(--s));
+  cursor: pointer;
+}
+.cr-nomore {
+  text-align: center;
+  color: #c0c6c3;
+  font-size: calc(28px * var(--s));
+  padding: calc(24px * var(--s)) 0 calc(40px * var(--s));
 }
 </style>

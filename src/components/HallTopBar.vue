@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useGameStore } from '../stores/game.js'
 import { appConfigFlow, clubApplyListFlow, clubReviewFlow, getLoginInfo, onClubNotify } from '../net/session.js'
+import PullRefresh from './PullRefresh.vue'
 
 // 5 个 tab 页公用顶栏:左 = 头像/昵称/6位ID,右 = 钻石 + 消息(俱乐部待审,红点) + 分享。
 // 消息对齐扯旋:大厅 AT_NoticeBtn + CLUB_JOIN 红点 → ClubNoticePanel(聚合全部俱乐部待审)。
@@ -72,6 +73,14 @@ async function review(r, approve) {
     showTip(e.message || '审批失败')
   }
 }
+async function refreshNotices() {
+  try {
+    notices.value = await clubApplyListFlow(0)
+    noticeCount.value = notices.value.length
+  } catch (e) {
+    showTip(e.message || '消息加载失败')
+  }
+}
 function fmtTime(ts) {
   const d = new Date(ts)
   const p2 = (n) => String(n).padStart(2, '0')
@@ -116,7 +125,7 @@ onBeforeUnmount(() => { if (offNotify) offNotify() })
       <div class="ntc-sheet">
         <div class="ntc-bar"></div>
         <div class="ntc-title">俱乐部消息</div>
-        <div class="ntc-body">
+        <PullRefresh class="ntc-body" :on-refresh="refreshNotices">
           <div v-if="noticeLoading" class="ntc-empty">加载中…</div>
           <template v-else>
             <div class="ntc-item" v-for="r in notices" :key="r.requestId">
@@ -132,7 +141,7 @@ onBeforeUnmount(() => { if (offNotify) offNotify() })
             </div>
             <div v-if="notices.length === 0" class="ntc-empty">暂无待处理消息</div>
           </template>
-        </div>
+        </PullRefresh>
       </div>
     </div>
   </div>

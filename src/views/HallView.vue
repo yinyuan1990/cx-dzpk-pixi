@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
 import HallTopBar from '../components/HallTopBar.vue'
+import PullRefresh from '../components/PullRefresh.vue'
 import { roomListFlow, getLoginInfo, myRecordsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
@@ -126,7 +127,7 @@ function signed(n) {
     </div>
 
     <!-- 牌局列表 -->
-    <div class="list">
+    <PullRefresh class="list" :on-refresh="loadRooms">
       <div class="item" v-for="tb in tables" :key="tb.roomId" @click="onEnter(tb)">
         <div class="row1">
           <span class="tname">{{ tb.name }}</span>
@@ -142,7 +143,7 @@ function signed(n) {
       </div>
       <div v-if="!loading && tables.length === 0" class="hall-empty">{{ t('hall.emptyCreate') }}</div>
       <div v-if="errMsg" class="hall-err">{{ errMsg }}</div>
-    </div>
+    </PullRefresh>
 
     <!-- 我的战绩弹窗 -->
     <div v-if="showRecords" class="create-mask" @click.self="showRecords = false">

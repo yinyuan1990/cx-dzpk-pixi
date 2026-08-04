@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
 import HallTopBar from '../components/HallTopBar.vue'
+import PullRefresh from '../components/PullRefresh.vue'
 import {
   clubListFlow, clubCreateFlow, clubApplyFlow,
   getLoginInfo, onClubNotify, uploadImageFlow,
@@ -162,7 +163,7 @@ async function onApply() {
     <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/消息/分享 -->
     <HallTopBar />
 
-    <div class="main">
+    <PullRefresh class="main" :on-refresh="loadClubs">
       <!-- TopArea:创建牌局 / 加入牌局 / 俱乐部(右侧高卡) -->
       <div class="toparea">
         <button class="card createRoom" @click="onCreateGame">
@@ -262,7 +263,7 @@ async function onApply() {
           还没有俱乐部<br />点上方「创建俱乐部」,或输入俱乐部号/邀请码申请加入
         </div>
       </div>
-    </div>
+    </PullRefresh>
 
     <!-- 选俱乐部弹窗(创建牌局用) -->
     <div v-if="showPickClub" class="create-mask" @click.self="showPickClub = false">

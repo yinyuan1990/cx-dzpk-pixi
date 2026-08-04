@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { createRoomFlow, roomOptionsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
+import GreenSlider from '../components/GreenSlider.vue'
 
 // 建房独立页面(对标 Unity 建房排版,参考 1.jpg):
 // 大厅不再建房,只有俱乐部(群主/管理员)从俱乐部详情进入本页;
@@ -165,8 +166,7 @@ async function onCreate() {
           </span>
         </div>
         <div class="cr-big">{{ formatKNotation(curBlind.sb) }}/{{ formatKNotation(curBlind.bb) }}</div>
-        <input type="range" class="cr-slider" min="0" :max="BLIND_PRESETS.length - 1" step="1"
-          v-model.number="form.blindIdx" />
+        <GreenSlider :min="0" :max="BLIND_PRESETS.length - 1" v-model="form.blindIdx" />
         <div class="cr-ticks">
           <span v-for="(p, i) in BLIND_PRESETS" :key="p.sb" :class="{ on: i === form.blindIdx }">
             {{ formatKNotation(p.sb) }}
@@ -180,14 +180,14 @@ async function onCreate() {
           <div class="cr-col">
             <div class="cr-sub">最小带入</div>
             <div class="cr-big">{{ form.inMinRate * 100 }}BB</div>
-            <input type="range" class="cr-slider" min="1" :max="IN_RATE_MAX" step="1"
-              :value="form.inMinRate" @input="onMinRate($event.target.value)" />
+            <GreenSlider :min="1" :max="IN_RATE_MAX" :model-value="form.inMinRate"
+              @update:model-value="onMinRate" />
           </div>
           <div class="cr-col">
             <div class="cr-sub">最大带入</div>
             <div class="cr-big">{{ form.inMaxRate * 100 }}BB</div>
-            <input type="range" class="cr-slider" min="1" :max="IN_RATE_MAX" step="1"
-              :value="form.inMaxRate" @input="onMaxRate($event.target.value)" />
+            <GreenSlider :min="1" :max="IN_RATE_MAX" :model-value="form.inMaxRate"
+              @update:model-value="onMaxRate" />
           </div>
         </div>
       </div>
@@ -196,8 +196,7 @@ async function onCreate() {
       <div class="cr-card">
         <div class="cr-sub">时长</div>
         <div class="cr-big">{{ curSettle }}分钟</div>
-        <input type="range" class="cr-slider" min="0" :max="SETTLE_PRESETS.length - 1" step="1"
-          v-model.number="form.settleIdx" />
+        <GreenSlider :min="0" :max="SETTLE_PRESETS.length - 1" v-model="form.settleIdx" />
         <div class="cr-ticks">
           <span v-for="(m, i) in SETTLE_PRESETS" :key="m" :class="{ on: i === form.settleIdx }">{{ m }}</span>
         </div>
@@ -229,7 +228,7 @@ async function onCreate() {
       <template v-if="showAdvanced">
         <div class="cr-card">
           <div class="cr-sub">服务费(费率) <b class="cr-val">{{ form.rakePercent }}%</b></div>
-          <input type="range" class="cr-slider" min="0" :max="RAKE_MAX" step="1" v-model.number="form.rakePercent" />
+          <GreenSlider :min="0" :max="RAKE_MAX" v-model="form.rakePercent" />
           <div class="cr-ticks">
             <span v-for="i in RAKE_MAX + 1" :key="i" :class="{ on: i - 1 === form.rakePercent }">{{ i - 1 }}</span>
           </div>
@@ -388,12 +387,6 @@ async function onCreate() {
   color: #08a88c;
 }
 
-.cr-slider {
-  width: 100%;
-  height: calc(56px * var(--s));
-  accent-color: #2fc9a7;
-  cursor: pointer;
-}
 .cr-ticks {
   display: flex;
   justify-content: space-between;

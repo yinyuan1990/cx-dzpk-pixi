@@ -10,6 +10,7 @@ import {
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
 import { compressAvatar } from '../utils/imageCompress.js'
+import PullRefresh from '../components/PullRefresh.vue'
 
 // 俱乐部详情(对齐扯旋 ClubMainView):
 //   顶部 = 俱乐部头像/名称(编号)/角色角标 + 我的积分 + 公告跑马灯;
@@ -68,22 +69,47 @@ function onEnter(tb) {
 function onCreateRoom() {
   router.push({ path: `/create-room/${clubId}`, query: { clubName: club.value ? club.value.name : '' } })
 }
+async function refreshMain() {
+  await Promise.all([loadClub(), loadRooms()])
+}
 
 // ===== 「战绩」底部弹框(对齐扯旋 CHEXUANRecordPanel,俱乐部维度) =====
 const showRecords = ref(false)
 const recData = ref({ records: [], stats: {} })
 const recLoading = ref(false)
 const REASON_TXT = { period: '周期结算', standup: '站起', leave: '离房', buyin_timeout: '超时站起' }
+// 分页:limit 递增重拉(后端倒序,cap 500);拉满 limit 视为还有下一页
+const REC_PAGE = 20
+const recLimit = ref(REC_PAGE)
+const recHasMore = ref(false)
+const recLoadingMore = ref(false)
+async function loadRecords() {
+  const d = await myRecordsFlow(recLimit.value, clubId)
+  recData.value = d
+  recHasMore.value = (d.records || []).length >= recLimit.value && recLimit.value < 500
+}
 async function openRecords() {
   showRecords.value = true
   recLoading.value = true
+  recLimit.value = REC_PAGE
   try {
-    recData.value = await myRecordsFlow(50, clubId)
+    await loadRecords()
   } catch (e) {
     toast(e.message || '战绩加载失败', false)
   } finally {
     recLoading.value = false
   }
+}
+async function refreshRecords() {
+  recLimit.value = REC_PAGE
+  try { await loadRecords() } catch (e) { toast(e.message || '战绩加载失败', false) }
+}
+async function loadMoreRecords() {
+  if (recLoadingMore.value || !recHasMore.value) return
+  recLoadingMore.value = true
+  recLimit.value += REC_PAGE
+  try { await loadRecords() } catch (e) { toast(e.message || '战绩加载失败', false) }
+  finally { recLoadingMore.value = false }
 }
 function recTime(ts) {
   if (!ts) return ''
@@ -114,6 +140,13 @@ function switchSetTab(k) {
   if (k === 'member' || k === 'partner') loadMembers()
   else if (k === 'scorelog') loadMyLogs()
   else if (k === 'settings') initEditForm()
+}
+async function refreshSetTab() {
+  const k = setTab.value
+  if (k === 'member') await Promise.all([loadMembers(), loadApplies(), loadClub()])
+  else if (k === 'partner') await loadMembers()
+  else if (k === 'scorelog') await loadMyLogs()
+  else await loadClub()
 }
 
 function copyInvite() {
@@ -225,12 +258,25 @@ function scoreOpsOf(m) {
 
 // ----- 积分明细(自己 / 群主管理员可查成员;type 着色对齐扯旋) -----
 const myLogs = ref([])
-async function loadMyLogs() {
+const LOG_PAGE = 30
+const logLimit = ref(LOG_PAGE)
+const logHasMore = ref(false)
+const logLoadingMore = ref(false)
+async function loadMyLogs(reset = true) {
+  if (reset) logLimit.value = LOG_PAGE
   try {
-    myLogs.value = await clubScoreLogsFlow({ clubId, userId: 0, limit: 50 })
+    const logs = await clubScoreLogsFlow({ clubId, userId: 0, limit: logLimit.value })
+    myLogs.value = logs
+    logHasMore.value = logs.length >= logLimit.value && logLimit.value < 500
   } catch (e) {
     toast(e.message || '加载明细失败', false)
   }
+}
+async function loadMoreLogs() {
+  if (logLoadingMore.value || !logHasMore.value) return
+  logLoadingMore.value = true
+  logLimit.value += LOG_PAGE
+  try { await loadMyLogs(false) } finally { logLoadingMore.value = false }
 }
 const scoreLogs = ref(null) // 弹窗查成员 { title, logs }
 async function openScoreLogs(m) {
@@ -358,7 +404,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
     <div v-if="errMsg" class="errbar">{{ errMsg }}</div>
 
     <!-- 牌局列表(好友局卡片样式 + 已坐玩家头像列) -->
-    <div class="body" :class="{ nonotice: !(club && club.notice) }">
+    <PullRefresh class="body" :class="{ nonotice: !(club && club.notice) }" :on-refresh="refreshMain">
       <button v-for="(tb, idx) in rooms" :key="tb.roomId" class="room" @click="onEnter(tb)">
         <div class="room-top">
           <span class="room-idx">{{ idx + 1 }}</span>
@@ -383,7 +429,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
       <div v-if="rooms.length === 0" class="empty">
         俱乐部还没有牌局<template v-if="canManage">,点右上「建牌局」开一桌</template>
       </div>
-    </div>
+    </PullRefresh>
 
     <!-- 左下角两个菜单(对齐扯旋 AT_Bottom:AT_RecordBtn 战绩 / AT_SettingBtn 俱乐部) -->
     <div class="bottom-menus">
@@ -406,7 +452,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
           <div class="rs-item"><b>{{ recData.stats.totalHands || 0 }}</b><span>总手数</span></div>
           <div class="rs-item"><b>{{ recData.stats.sessions || 0 }}</b><span>总局数</span></div>
         </div>
-        <div class="sheet-body">
+        <PullRefresh class="sheet-body" :on-refresh="refreshRecords">
           <div v-if="recLoading" class="empty">加载中…</div>
           <template v-else>
             <div class="rec-item" v-for="(r, i) in recData.records" :key="i">
@@ -417,8 +463,10 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <div class="ri-r" :class="{ win: r.profit > 0, lose: r.profit < 0 }">{{ signed(r.profit) }}</div>
             </div>
             <div v-if="recData.records.length === 0" class="empty">本俱乐部还没有战绩</div>
+            <div v-else-if="recHasMore" class="more" @click="loadMoreRecords">{{ recLoadingMore ? '加载中…' : '加载更多' }}</div>
+            <div v-else class="nomore">没有更多了</div>
           </template>
-        </div>
+        </PullRefresh>
       </div>
     </div>
 
@@ -435,7 +483,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             :class="{ on: setTab === tb.key }" @click="switchSetTab(tb.key)">{{ tb.label }}</button>
         </div>
 
-        <div class="sheet-body">
+        <PullRefresh class="sheet-body" :on-refresh="refreshSetTab">
           <!-- Tab:成员管理 -->
           <template v-if="setTab === 'member'">
             <!-- 待审申请(群主/管理员) -->
@@ -518,6 +566,8 @@ onBeforeUnmount(() => clearInterval(pollTimer))
                 <div class="log-after">余 {{ formatKNotation(lg.after) }}</div>
               </div>
             </div>
+            <div v-if="myLogs.length && logHasMore" class="more" @click="loadMoreLogs">{{ logLoadingMore ? '加载中…' : '加载更多' }}</div>
+            <div v-else-if="myLogs.length" class="nomore">没有更多了</div>
           </template>
 
           <!-- Tab:俱乐部设置(改资料;群主/管理员) -->
@@ -544,7 +594,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
               <button v-else class="dz-btn" @click="onDissolve">解散俱乐部</button>
             </div>
           </template>
-        </div>
+        </PullRefresh>
       </div>
     </div>
 
@@ -865,6 +915,19 @@ onBeforeUnmount(() => clearInterval(pollTimer))
   color: #9a9a9c;
   font-size: calc(32px * var(--s));
   padding: calc(100px * var(--s)) 0;
+}
+.more {
+  text-align: center;
+  color: #08a88c;
+  font-size: calc(30px * var(--s));
+  padding: calc(24px * var(--s)) 0 calc(40px * var(--s));
+  cursor: pointer;
+}
+.nomore {
+  text-align: center;
+  color: #c0c6c3;
+  font-size: calc(28px * var(--s));
+  padding: calc(24px * var(--s)) 0 calc(40px * var(--s));
 }
 
 /* 左下角两个菜单 */
