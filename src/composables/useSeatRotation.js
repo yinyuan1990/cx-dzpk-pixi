@@ -229,8 +229,8 @@ export function useSeatRotation() {
       }
       return {
         userId: uid,
-        // 主服真实头像 URL 优先;游客/机器人(无头像)用本地默认头像
-        avatar: s.headPic && /^https?:\/\//.test(s.headPic) ? s.headPic : randomAvatar(),
+        // 真实头像 URL / 同域相对路径(机器人头像 /assets/...)优先;无头像用本地默认头像
+        avatar: s.headPic && (/^https?:\/\//.test(s.headPic) || s.headPic.startsWith('/')) ? s.headPic : randomAvatar(),
         name: s.nick || ('WPK' + uid),
         stack: s.chips || 0,
         isSelf: !!s.isHero,
