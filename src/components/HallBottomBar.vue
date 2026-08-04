@@ -1,21 +1,29 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 // 1:1 还原自 HallBottomBar 打包 prefab（main/_packed/a6db0f97）：
 // 整条 1080×250 吸底；content 1000 宽水平 Layout，padding L/R 30；
-// 默认 5 个 tab（showPkw）：HALL/GAME/FRIEND/CAREER/PROFILE。
+// 5 个 tab：大厅 / 小游戏 / 好友局 / 生涯 / 我的。
+// 路由统一在本组件内跳转(各页不再各写 onTab,修复来回切不动的问题)。
 // 图标=逆向真图(atlas 17247d922 裁出 56×56)，用 CSS mask 上色：选中青绿/未选灰。
 const { t } = useI18n()
+const router = useRouter()
 const props = defineProps({ active: { type: String, default: 'hall' } })
 const emit = defineEmits(['change'])
 
 const TABS = [
-  { key: 'hall', icon: 'tab_hall', label: () => t('hall.tabHall') },
-  { key: 'game', icon: 'tab_game', label: () => t('hall.tabGame') },
-  { key: 'friend', icon: 'tab_friend', label: () => t('hall.tabFriend') },
-  { key: 'career', icon: 'tab_career', label: () => t('hall.tabCareer') },
-  { key: 'profile', icon: 'tab_profile', label: () => t('hall.tabProfile') },
+  { key: 'hall', icon: 'tab_hall', label: () => t('hall.tabHall'), route: '/hall' },
+  { key: 'game', icon: 'tab_game', label: () => t('hall.tabGame'), route: '/minigames' },
+  { key: 'friend', icon: 'tab_friend', label: () => t('hall.tabFriend'), route: '/friend' },
+  { key: 'career', icon: 'tab_career', label: () => t('hall.tabCareer'), route: '/career' },
+  { key: 'profile', icon: 'tab_profile', label: () => t('hall.tabProfile'), route: '/profile' },
 ]
+
+function onClick(tb) {
+  emit('change', tb.key)
+  if (tb.key !== props.active) router.push(tb.route)
+}
 </script>
 
 <template>
@@ -27,7 +35,7 @@ const TABS = [
         :key="tb.key"
         class="tabitem"
         :class="{ on: active === tb.key }"
-        @click="emit('change', tb.key)"
+        @click="onClick(tb)"
       >
         <!-- 未选：只白字；选中：薄荷胶囊(bg_hall_bottom_active #84F9CC) 内 图标+文字 横向 -->
         <template v-if="active === tb.key">

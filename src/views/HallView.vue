@@ -94,12 +94,6 @@ function signed(n) {
   return (n > 0 ? '+' : '') + formatKNotation(n || 0)
 }
 
-const activeTab = ref('hall')
-function onTab(key) {
-  if (key === 'friend') router.push('/friend')
-  else if (key === 'game') router.push('/club')
-  else activeTab.value = key
-}
 </script>
 
 <template>
@@ -180,7 +174,7 @@ function onTab(key) {
       </div>
     </div>
 
-    <HallBottomBar :active="activeTab" @change="onTab" />
+    <HallBottomBar active="hall" />
   </div>
 </template>
 

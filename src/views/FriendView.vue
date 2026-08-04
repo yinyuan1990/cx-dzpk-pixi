@@ -1,108 +1,195 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
 import HallTopBar from '../components/HallTopBar.vue'
+import {
+  clubListFlow, clubCreateFlow, clubApplyFlow,
+  getLoginInfo, onClubNotify, uploadImageFlow,
+} from '../net/session.js'
+import { compressAvatar } from '../utils/imageCompress.js'
+import { useGameStore } from '../stores/game.js'
 
-// 1:1 结构还原自 98modules/friendGame/FriendGameRoomHome.prefab + 控制器 index.js。
-// 真实结构：topheadContainer(顶部栏) -> TopArea(3 操作卡) -> middleArea(2 钻石卡) ->
-//           DownArea(筛选 tab + 世界杯活动 Banner + 牌局列表项)。底栏沿用 HallBottomBar。
+// 好友局页(对齐扯旋 FriendGameRoomHome 布局):
+//   TopArea(创建牌局/加入牌局/俱乐部卡) → middleArea(钻石小游戏/钻石大厅) →
+//   俱乐部列表(我创建的 / 我加入的,数据 421 CLUB_LIST)。
 const router = useRouter()
 const { t } = useI18n()
+const game = useGameStore()
 
-const activeTab = ref('friend')
-function onTab(key) {
-  // 已实现的 Tab 才跳转；未建页面(game/career/profile)暂留当前
-  if (key === 'hall') router.push('/hall')
-  else if (key === 'friend') activeTab.value = 'friend'
+const ROLE_TXT = { 1: '成员', 2: '管理员', 3: '群主', 4: '合伙人' }
+
+const clubs = ref([])
+const loading = ref(false)
+const errMsg = ref('')
+const okMsg = ref('')
+
+function toast(msg, ok = true) {
+  if (ok) { okMsg.value = msg; setTimeout(() => { okMsg.value = '' }, 4000) }
+  else { errMsg.value = msg; setTimeout(() => { errMsg.value = '' }, 4000) }
 }
 
-// GameTypeList 筛选 chip：全部 + 密码局（本期静态两项）。
-const filters = [
-  { key: 'all', label: () => t('friend.filterAll') },
-  { key: 'pwd', label: () => t('friend.filterPwd') },
-]
-const activeFilter = ref('all')
+// 我创建的 = 我是群主;我加入的 = 其它角色
+const myCreated = computed(() => clubs.value.filter((c) => Number(c.myRole) === 3))
+const myJoined = computed(() => clubs.value.filter((c) => Number(c.myRole) !== 3))
 
-// 牌局列表(lv_gamblingList)：真实来自 /hall/getRoomRecordByCreateView。
-// 结构 1:1 还原 FriendGameRoomListItem。本期放 2 条假数据用于还原布局。
-const rooms = ref([
-  {
-    id: 1,
-    master: '踢桃2',
-    avatar: 'linear-gradient(135deg,#8ec5ff,#5b8def)',
-    roomName: '踢桃2的牌局',
-    tags: [
-      { text: '暴击', type: 'boom' },
-      { text: '德州', type: 'type' },
-    ],
-    grade: '1/2',
-    time: '8h',
-    person: '0/9',
-    played: true,
-  },
-  {
-    id: 2,
-    master: '老王ALLIN',
-    avatar: 'linear-gradient(135deg,#ffd27f,#f7901e)',
-    roomName: '老王的欢乐局',
-    tags: [{ text: '德州', type: 'type' }],
-    grade: '2/4',
-    time: '3h',
-    person: '5/9',
-    played: false,
-  },
-])
+async function loadClubs() {
+  loading.value = true
+  try {
+    clubs.value = await clubListFlow()
+  } catch (e) {
+    toast(e.message || '加载俱乐部失败', false)
+  } finally {
+    loading.value = false
+  }
+}
 
-// 俱乐部钻石卡：showPKWorClub() 控制是否显示，这里默认展示以还原完整布局。
+let offNotify = null
+onMounted(() => {
+  if (!getLoginInfo()) { router.replace('/login'); return }
+  loadClubs()
+  offNotify = onClubNotify((d) => {
+    toast(d.approve ? `已加入俱乐部「${d.clubName}」` : `俱乐部「${d.clubName}」拒绝了你的申请`)
+    if (d.approve) loadClubs()
+  })
+})
+onBeforeUnmount(() => { if (offNotify) offNotify() })
+
+function openClub(c) {
+  router.push('/club/' + c.clubId)
+}
+
 const diamondGamesOnline = ref(0)
 const diamondHallOnline = ref(0)
 
-function ShowChooseCreateRoomView() {} // -> FriendGameChooseCreatTypeView
-function joinRoom() {} // -> FriendGameInputRoomID
-function showClub() {} // -> ./club
-function clickCreateClub() {}
-function clickJoinClub() {}
-function clickFilter() {} // -> FriendGameRoomFilter
-function clickWorldCup() {} // -> 世界杯活动
+// ===== 创建牌局:先选俱乐部(仅群主/管理员可建) =====
+const showPickClub = ref(false)
+const manageableClubs = computed(() => clubs.value.filter((c) => c.myRole === 3 || c.myRole === 2))
+function onCreateGame() {
+  if (manageableClubs.value.length === 0) {
+    toast('先创建一个俱乐部(或成为管理员)才能开牌局', false)
+    return
+  }
+  if (manageableClubs.value.length === 1) {
+    const c = manageableClubs.value[0]
+    router.push({ path: `/create-room/${c.clubId}`, query: { clubName: c.name } })
+    return
+  }
+  showPickClub.value = true
+}
+function pickClub(c) {
+  showPickClub.value = false
+  router.push({ path: `/create-room/${c.clubId}`, query: { clubName: c.name } })
+}
+
+// ===== 加入牌局:输房间号直接进桌(快照会补齐盲注/名称) =====
+const showJoinRoom = ref(false)
+const joinRoomId = ref('')
+function onJoinRoom() {
+  const id = Number(joinRoomId.value)
+  if (!id) { toast('请输入房间号', false); return }
+  showJoinRoom.value = false
+  joinRoomId.value = ''
+  game.setEnterTarget({ roomId: id, name: '#' + id })
+  router.push('/table/' + id)
+}
+
+// ===== 创建俱乐部(名称+简介+头像,对齐扯旋;头像压缩后 MinIO 直传) =====
+const showCreate = ref(false)
+const creating = ref(false)
+const createForm = ref({ name: '', remark: '', avatar: '' })
+const avatarBusy = ref(false)
+const clubFileInput = ref(null)
+async function onPickClubAvatar(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file || avatarBusy.value) return
+  avatarBusy.value = true
+  try {
+    const blob = await compressAvatar(file)
+    createForm.value.avatar = await uploadImageFlow(blob, 'avatar', 'club.jpg')
+  } catch (err) {
+    toast(err.message || '头像上传失败', false)
+  } finally {
+    avatarBusy.value = false
+  }
+}
+async function onCreate() {
+  if (creating.value) return
+  const f = createForm.value
+  if (!f.avatar) { toast('请上传俱乐部头像', false); return }
+  if (!f.name.trim()) { toast('请输入俱乐部名称', false); return }
+  if (!f.remark.trim()) { toast('请输入俱乐部简介', false); return }
+  creating.value = true
+  try {
+    const res = await clubCreateFlow({ name: f.name.trim(), remark: f.remark.trim(), avatar: f.avatar })
+    showCreate.value = false
+    createForm.value = { name: '', remark: '', avatar: '' }
+    toast(`俱乐部创建成功,编号 ${res.clubNo}`)
+    await loadClubs()
+  } catch (e) {
+    toast(e.message || '创建失败', false)
+  } finally {
+    creating.value = false
+  }
+}
+
+// ===== 申请加入俱乐部 =====
+const showApply = ref(false)
+const applying = ref(false)
+const applyCode = ref('')
+async function onApply() {
+  if (applying.value) return
+  const code = applyCode.value.trim()
+  if (!/^\d{6}$/.test(code)) { toast('请输入 6 位俱乐部号或邀请码', false); return }
+  applying.value = true
+  try {
+    const res = await clubApplyFlow(code)
+    showApply.value = false
+    applyCode.value = ''
+    toast(`已申请加入「${res.clubName}」,等待审批`)
+  } catch (e) {
+    toast(e.message || '申请失败', false)
+  } finally {
+    applying.value = false
+  }
+}
 </script>
 
 <template>
   <div class="stage-root friend">
-    <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/分享(5 个 tab 页统一) -->
+    <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/消息/分享 -->
     <HallTopBar />
 
-    <!-- mainInfo：可滚动主体 -->
     <div class="main">
-      <!-- TopArea：创建牌局 / 加入牌局 / 俱乐部(右侧高卡) -->
+      <!-- TopArea:创建牌局 / 加入牌局 / 俱乐部(右侧高卡) -->
       <div class="toparea">
-        <button class="card createRoom" @click="ShowChooseCreateRoomView">
+        <button class="card createRoom" @click="onCreateGame">
           <div class="card-text">
             <div class="card-title">{{ t('friend.create') }}</div>
             <div class="card-sub">{{ t('friend.createTip') }}</div>
           </div>
         </button>
 
-        <button class="card joinGame" @click="joinRoom">
+        <button class="card joinGame" @click="showJoinRoom = true">
           <div class="card-text">
             <div class="card-title">{{ t('friend.join') }}</div>
             <div class="card-sub">{{ t('friend.joinTip') }}</div>
           </div>
         </button>
 
-        <button class="card ndClub" @click="showClub">
+        <button class="card ndClub">
           <div class="card-title club">{{ t('friend.club') }}</div>
           <div class="card-sub club">{{ t('friend.clubTip') }}</div>
           <div class="club-btns">
-            <span class="club-btn ghost" @click.stop="clickCreateClub">{{ t('friend.clubCreate') }}</span>
-            <span class="club-btn solid" @click.stop="clickJoinClub">{{ t('friend.clubJoin') }}</span>
+            <span class="club-btn ghost" @click.stop="showCreate = true">{{ t('friend.clubCreate') }}</span>
+            <span class="club-btn solid" @click.stop="showApply = true">{{ t('friend.clubJoin') }}</span>
           </div>
         </button>
       </div>
 
-      <!-- middleArea：钻石小游戏 / 钻石大厅。1:1 真机：标题+箭头在上，红色在玩数+灰色在玩在下；
-           钻石小游戏右下角带世界杯竞猜橙标 -->
+      <!-- middleArea:钻石小游戏 / 钻石大厅 -->
       <div class="middlearea">
         <button class="dcard">
           <div class="dc-top">
@@ -111,7 +198,6 @@ function clickWorldCup() {} // -> 世界杯活动
           </div>
           <div class="dc-bottom">
             <span class="dc-online"><b>{{ diamondGamesOnline }}</b> {{ t('friend.online') }}</span>
-            <span class="dc-promo">{{ t('friend.worldCupBet') }}</span>
           </div>
         </button>
         <button class="dcard">
@@ -125,73 +211,119 @@ function clickWorldCup() {} // -> 世界杯活动
         </button>
       </div>
 
-      <!-- DownArea：筛选 chip(tab) + 世界杯活动 Banner(竞猜) + 牌局列表(item) -->
-      <div class="downarea">
-        <!-- tab：全部(选中=青描边胶囊) / 密码局(未选=浅描边) + 右侧漏斗筛选 -->
-        <div class="filterbar">
-          <div class="chips">
-            <button
-              v-for="f in filters"
-              :key="f.key"
-              class="chip"
-              :class="{ on: activeFilter === f.key }"
-              @click="activeFilter = f.key"
-            ><span class="chip-text" :data-text="f.label()">{{ f.label() }}</span></button>
-          </div>
-          <button class="filterbtn" @click="clickFilter" aria-label="filter">
-            <img src="/assets/hall/filter_icon.png" alt="" />
-          </button>
-        </div>
+      <div v-if="okMsg" class="okbar">{{ okMsg }}</div>
+      <div v-if="errMsg" class="errbar">{{ errMsg }}</div>
 
-        <!-- 竞猜：世界杯专属活动 Banner -->
-        <button class="wcbanner" @click="clickWorldCup">
-          <span class="wc-trophy">&#127942;</span>
-          <div class="wc-text">
-            <div class="wc-title">{{ t('friend.wcBannerTitle') }}</div>
-            <div class="wc-sub">{{ t('friend.wcBannerSub') }}</div>
-          </div>
-          <span class="wc-join">{{ t('friend.wcBannerJoin') }}</span>
-        </button>
-
-        <!-- item：牌局列表 -->
-        <div class="roomlist">
-          <div v-if="rooms.length === 0" class="empty">
-            <img class="empty-img" src="/assets/hall/friend_empty.png" alt="" />
-            <div class="empty-text">{{ t('friend.noResult') }}</div>
-          </div>
-
-          <button v-for="r in rooms" :key="r.id" class="room">
-            <div class="room-top">
-              <i class="room-avatar" :style="{ backgroundImage: r.avatar }"></i>
-              <span class="room-master">{{ r.master }}</span>
-              <span class="room-tags">
-                <span
-                  v-for="(tg, i) in r.tags"
-                  :key="i"
-                  class="rtag"
-                  :class="'rtag-' + tg.type"
-                >{{ tg.text }}</span>
-              </span>
+      <!-- 俱乐部列表(对齐扯旋 getAllMyClubs;分「我创建的/我加入的」) -->
+      <div class="clublist">
+        <template v-if="myCreated.length">
+          <div class="sec-title">我创建的</div>
+          <div class="citem" v-for="c in myCreated" :key="c.clubId" @click="openClub(c)">
+            <img v-if="c.avatar" :src="c.avatar" class="cbadge cbadge-img" />
+            <div v-else class="cbadge">{{ (c.name || '?')[0] }}</div>
+            <div class="cmid">
+              <div class="crow1">
+                <span class="cname">{{ c.name }}</span>
+                <span class="cno">({{ c.clubNo }})</span>
+                <span class="crole r3">群主</span>
+              </div>
+              <div class="cremark">简介:{{ c.remark || '—' }}</div>
+              <div class="crow2">
+                <span class="ccnt">{{ c.memberCount }} 人</span>
+                <span v-if="c.pendingCount > 0" class="cpending">{{ c.pendingCount }} 条申请待审</span>
+              </div>
             </div>
-            <div class="room-name">{{ r.roomName }}</div>
-            <div class="room-stats">
-              <span class="rstat">
-                <svg class="rs-icon" viewBox="0 0 24 24" fill="#7a7a7c"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v5c0 1.66 3.13 3 7 3s7-1.34 7-3V6" fill="none" stroke="#7a7a7c" stroke-width="2"/><path d="M5 11v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" fill="none" stroke="#7a7a7c" stroke-width="2"/></svg>
-                {{ r.grade }}
-              </span>
-              <span class="rstat">
-                <svg class="rs-icon" viewBox="0 0 24 24" fill="none" stroke="#7a7a7c" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg>
-                {{ r.time }}
-              </span>
-              <span class="rstat rperson">{{ r.person }}</span>
+            <div class="carrow">&#8250;</div>
+          </div>
+        </template>
+
+        <template v-if="myJoined.length">
+          <div class="sec-title">我加入的</div>
+          <div class="citem" v-for="c in myJoined" :key="c.clubId" @click="openClub(c)">
+            <img v-if="c.avatar" :src="c.avatar" class="cbadge cbadge-img" />
+            <div v-else class="cbadge">{{ (c.name || '?')[0] }}</div>
+            <div class="cmid">
+              <div class="crow1">
+                <span class="cname">{{ c.name }}</span>
+                <span class="cno">({{ c.clubNo }})</span>
+                <span class="crole" :class="'r' + c.myRole">{{ ROLE_TXT[c.myRole] || '成员' }}</span>
+              </div>
+              <div class="cremark">简介:{{ c.remark || '—' }}</div>
+              <div class="crow2">
+                <span class="ccnt">{{ c.memberCount }} 人</span>
+                <span v-if="c.pendingCount > 0" class="cpending">{{ c.pendingCount }} 条申请待审</span>
+              </div>
             </div>
-            <span v-if="r.played" class="room-played"><i>{{ t('friend.played') }}</i></span>
-          </button>
+            <div class="carrow">&#8250;</div>
+          </div>
+        </template>
+
+        <div v-if="!loading && clubs.length === 0" class="cempty">
+          还没有俱乐部<br />点上方「创建俱乐部」,或输入俱乐部号/邀请码申请加入
         </div>
       </div>
     </div>
 
-    <HallBottomBar :active="activeTab" @change="onTab" />
+    <!-- 选俱乐部弹窗(创建牌局用) -->
+    <div v-if="showPickClub" class="create-mask" @click.self="showPickClub = false">
+      <div class="create-box">
+        <div class="c-title">选择俱乐部开局</div>
+        <div class="pick-item" v-for="c in manageableClubs" :key="c.clubId" @click="pickClub(c)">
+          <img v-if="c.avatar" :src="c.avatar" class="pick-av" />
+          <span class="pick-name">{{ c.name }}</span>
+          <span class="pick-no">({{ c.clubNo }})</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 加入牌局弹窗 -->
+    <div v-if="showJoinRoom" class="create-mask" @click.self="showJoinRoom = false">
+      <div class="create-box">
+        <div class="c-title">加入牌局</div>
+        <div class="c-label">房间号</div>
+        <input v-model="joinRoomId" class="c-input" placeholder="输入房间号" inputmode="numeric" @keyup.enter="onJoinRoom" />
+        <button class="c-confirm" @click="onJoinRoom">进入</button>
+      </div>
+    </div>
+
+    <!-- 创建俱乐部弹窗 -->
+    <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
+      <div class="create-box">
+        <div class="c-title">创建俱乐部</div>
+        <div class="c-label">头像(必传,自动压缩)</div>
+        <div class="av-up" @click="clubFileInput && clubFileInput.click()">
+          <div class="av-box">
+            <img v-if="createForm.avatar" :src="createForm.avatar" alt="" />
+            <span v-else class="av-plus">+</span>
+          </div>
+          <span class="av-hint">{{ avatarBusy ? '上传中…' : createForm.avatar ? '点击更换' : '选择图片' }}</span>
+          <input ref="clubFileInput" type="file" accept="image/*" class="av-file" @change="onPickClubAvatar" />
+        </div>
+        <div class="c-label">名称(最长 4 个汉字,不能纯数字)</div>
+        <input v-model="createForm.name" class="c-input" placeholder="俱乐部名称" maxlength="8" />
+        <div class="c-label">简介(必填)</div>
+        <input v-model="createForm.remark" class="c-input" placeholder="一句话介绍你的俱乐部" maxlength="100" />
+        <div v-if="errMsg" class="c-err">{{ errMsg }}</div>
+        <button class="c-confirm" :disabled="creating" @click="onCreate">
+          {{ creating ? '创建中…' : '创建' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 申请加入弹窗 -->
+    <div v-if="showApply" class="create-mask" @click.self="showApply = false">
+      <div class="create-box">
+        <div class="c-title">申请加入俱乐部</div>
+        <div class="c-label">俱乐部号 / 邀请码</div>
+        <input v-model="applyCode" class="c-input" placeholder="6 位数字" maxlength="6" inputmode="numeric" @keyup.enter="onApply" />
+        <div v-if="errMsg" class="c-err">{{ errMsg }}</div>
+        <button class="c-confirm" :disabled="applying" @click="onApply">
+          {{ applying ? '提交中…' : '提交申请' }}
+        </button>
+      </div>
+    </div>
+
+    <HallBottomBar active="friend" />
   </div>
 </template>
 
@@ -212,7 +344,7 @@ function clickWorldCup() {} // -> 世界杯活动
   padding: calc(30px * var(--s)) calc(40px * var(--s));
 }
 
-/* TopArea：3 卡(左两叠 + 右高卡) */
+/* TopArea:3 卡(左两叠 + 右高卡) */
 .toparea {
   display: grid;
   grid-template-columns: calc(510px * var(--s)) calc(470px * var(--s));
@@ -235,7 +367,6 @@ function clickWorldCup() {} // -> 世界杯活动
   background-repeat: no-repeat;
   background-position: center;
 }
-/* 创建/加入卡底图左侧是浅薄荷绿，用深绿字保证对比度 */
 .createRoom {
   grid-column: 1;
   grid-row: 1;
@@ -311,7 +442,7 @@ function clickWorldCup() {} // -> 世界杯活动
   color: #fff;
 }
 
-/* middleArea：2 钻石卡 */
+/* middleArea:2 钻石卡 */
 .middlearea {
   margin-top: calc(30px * var(--s));
   display: grid;
@@ -363,265 +494,250 @@ function clickWorldCup() {} // -> 世界杯活动
   color: #f5463f;
   margin-right: calc(6px * var(--s));
 }
-.dc-promo {
-  height: calc(48px * var(--s));
-  line-height: calc(48px * var(--s));
-  padding: 0 calc(20px * var(--s));
-  border-radius: calc(24px * var(--s)) calc(24px * var(--s)) calc(24px * var(--s)) 0;
-  background: linear-gradient(135deg, #ffa53d, #f4791b);
-  color: #fff;
-  font-size: calc(24px * var(--s));
-  font-weight: 600;
-  white-space: nowrap;
+
+/* 提示条 */
+.okbar,
+.errbar {
+  margin-top: calc(24px * var(--s));
+  padding: calc(18px * var(--s)) calc(28px * var(--s));
+  border-radius: calc(16px * var(--s));
+  font-size: calc(30px * var(--s));
+  text-align: center;
+}
+.okbar {
+  background: #e8faf5;
+  color: #08a88c;
+}
+.errbar {
+  background: #fdecec;
+  color: #e05a5a;
 }
 
-/* DownArea */
-.downarea {
-  margin-top: calc(40px * var(--s));
+/* 俱乐部列表 */
+.clublist {
+  margin-top: calc(30px * var(--s));
 }
-.filterbar {
-  display: flex;
-  align-items: center;
-  gap: calc(20px * var(--s));
-  height: calc(92px * var(--s));
-}
-.chips {
-  display: flex;
-  gap: calc(20px * var(--s));
-  flex: 1;
-  overflow-x: auto;
-}
-/* 真机参考(3.jpg)：两态都是白底胶囊；未选=极浅灰描边灰字，选中=青绿描边青绿字 */
-.chip {
-  flex: none;
-  height: calc(80px * var(--s));
-  padding: 0 calc(36px * var(--s));
-  border: calc(2px * var(--s)) solid #e7e7e9;
-  border-radius: calc(40px * var(--s));
-  background: #ffffff;
-  color: #9a9a9c;
-  font-size: calc(32px * var(--s));
-  cursor: pointer;
-}
-.chip.on {
-  background: #ffffff;
-  border-color: #08c0a0;
-  color: #08c0a0;
-  font-weight: 600;
-}
-/* 幽灵占位：chip 恒按加粗文本预留宽度，选中变粗(600)不改变宽度，相邻 chip 不再位移 */
-.chip-text {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-}
-.chip-text::after {
-  content: attr(data-text);
-  height: 0;
-  font-weight: 600;
-  visibility: hidden;
-  overflow: hidden;
-  pointer-events: none;
-}
-/* 漏斗筛选按钮：真值圆角白底(mask sprite #FFF6F4) + 真漏斗图标 filterIconNoPAlpha */
-.filterbtn {
-  flex: none;
-  width: calc(80px * var(--s));
-  height: calc(88px * var(--s));
-  border: none;
-  border-radius: calc(20px * var(--s));
-  background: #ffffff;
-  box-shadow: 0 calc(3px * var(--s)) calc(10px * var(--s)) rgba(0, 0, 0, 0.05);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.filterbtn img {
-  width: calc(44px * var(--s));
-  height: calc(44px * var(--s));
-  object-fit: contain;
-}
-
-/* 竞猜：世界杯活动 Banner */
-.wcbanner {
-  margin-top: calc(20px * var(--s));
-  width: 100%;
-  height: calc(150px * var(--s));
-  border: none;
-  border-radius: calc(24px * var(--s));
-  background: linear-gradient(135deg, #e7f7ec, #d8f3e6);
-  display: flex;
-  align-items: center;
-  gap: calc(16px * var(--s));
-  padding: 0 calc(24px * var(--s));
-  cursor: pointer;
-  text-align: left;
-}
-.wc-trophy {
-  flex: none;
-  font-size: calc(72px * var(--s));
-  line-height: 1;
-}
-.wc-text {
-  flex: 1;
-  min-width: 0;
-}
-.wc-title {
-  font-size: calc(34px * var(--s));
+.sec-title {
+  font-size: calc(36px * var(--s));
   font-weight: 700;
   color: #2b2b2d;
+  margin: calc(24px * var(--s)) 0 calc(16px * var(--s));
 }
-.wc-sub {
-  margin-top: calc(6px * var(--s));
-  font-size: calc(26px * var(--s));
-  color: #4aa888;
-}
-.wc-join {
-  flex: none;
-  height: calc(76px * var(--s));
-  line-height: calc(76px * var(--s));
-  padding: 0 calc(30px * var(--s));
-  border-radius: calc(38px * var(--s));
-  background: linear-gradient(135deg, #2fd39a, #14b07f);
-  color: #fff;
-  font-size: calc(28px * var(--s));
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* item：牌局列表 */
-.roomlist {
-  margin-top: calc(20px * var(--s));
+.citem {
   display: flex;
-  flex-direction: column;
-  gap: calc(20px * var(--s));
-}
-.empty {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: calc(160px * var(--s)) 0;
-  color: #b3a9ab;
-}
-.empty-img {
-  width: calc(338px * var(--s));
-  height: auto;
-  display: block;
-}
-.empty-text {
-  margin-top: calc(24px * var(--s));
-  font-size: calc(36px * var(--s));
-}
-
-/* 牌局列表项 FriendGameRoomListItem(1:1 结构) */
-.room {
-  position: relative;
-  width: 100%;
-  border: none;
+  gap: calc(28px * var(--s));
+  min-height: calc(180px * var(--s));
+  margin-bottom: calc(20px * var(--s));
   border-radius: calc(24px * var(--s));
   background: #fff;
   box-shadow: 0 calc(4px * var(--s)) calc(16px * var(--s)) rgba(0, 0, 0, 0.05);
-  padding: calc(24px * var(--s)) calc(28px * var(--s));
-  text-align: left;
+  padding: calc(24px * var(--s)) calc(32px * var(--s));
   cursor: pointer;
-  overflow: hidden;
 }
-.room-top {
+.cbadge {
+  width: calc(110px * var(--s));
+  height: calc(110px * var(--s));
+  border-radius: calc(26px * var(--s));
+  background: linear-gradient(135deg, #14d3b6, #08c0a0);
+  color: #fff;
+  font-size: calc(50px * var(--s));
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.cbadge-img {
+  object-fit: cover;
+}
+.cmid {
+  flex: 1;
+  min-width: 0;
+}
+.crow1 {
   display: flex;
   align-items: center;
   gap: calc(14px * var(--s));
 }
-.room-avatar {
-  flex: none;
-  width: calc(56px * var(--s));
-  height: calc(56px * var(--s));
-  border-radius: 50%;
-  background-size: cover;
-  background-position: center;
-}
-.room-master {
-  font-size: calc(30px * var(--s));
-  font-weight: 600;
-  color: #2b2b2d;
-}
-.room-tags {
-  margin-left: auto;
-  display: flex;
-  gap: calc(10px * var(--s));
-}
-/* 逆向真值：标签底是胶囊(bg_capsule_H54，圆角=半高)，类型色低透明做底 + 同色文字，字号30 */
-.rtag {
-  height: calc(50px * var(--s));
-  line-height: calc(50px * var(--s));
-  padding: 0 calc(18px * var(--s));
-  border-radius: calc(25px * var(--s));
-  font-size: calc(28px * var(--s));
-  font-weight: 500;
-}
-/* 暴击 BoomGameTag：#FF2450 淡红底 + 红字 */
-.rtag-boom {
-  background: rgba(255, 36, 80, 0.1);
-  color: #ff2450;
-}
-/* 德州 GameType(texas)：#08C0A0 淡青绿底 + 青绿字 */
-.rtag-type {
-  background: rgba(8, 192, 160, 0.18);
-  color: #08c0a0;
-}
-.room-name {
-  margin-top: calc(16px * var(--s));
-  font-size: calc(34px * var(--s));
+.cname {
+  font-size: calc(42px * var(--s));
   font-weight: 700;
-  color: #2b2b2d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.room-stats {
-  margin-top: calc(18px * var(--s));
-  display: flex;
-  align-items: center;
-  gap: calc(28px * var(--s));
-}
-.rstat {
-  display: flex;
-  align-items: center;
-  gap: calc(8px * var(--s));
+.cno {
   font-size: calc(28px * var(--s));
-  color: #6b6b6d;
+  color: #b0b0b0;
 }
-.rs-icon {
-  width: calc(34px * var(--s));
-  height: calc(34px * var(--s));
+.crole {
+  padding: calc(3px * var(--s)) calc(16px * var(--s));
+  border-radius: 999px;
+  font-size: calc(24px * var(--s));
+  background: #f0f0f0;
+  color: #777;
 }
-.rperson {
-  padding: 0 calc(18px * var(--s));
-  height: calc(48px * var(--s));
-  line-height: calc(48px * var(--s));
-  border: calc(2px * var(--s)) solid #a6e0cb;
-  border-radius: calc(24px * var(--s));
-  color: #6b6b6d;
+.crole.r3 {
+  background: #e8faf5;
+  color: #08a88c;
 }
-/* 玩过角标：真 sprite playStateTag_Playing(右下角三角 ribbon) + -45° 文字 */
-.room-played {
+.crole.r2 {
+  background: #f3e8ff;
+  color: #9a55e0;
+}
+.crole.r4 {
+  background: #fff3dd;
+  color: #d29018;
+}
+.cremark {
+  font-size: calc(26px * var(--s));
+  color: #9a9a9c;
+  margin-top: calc(8px * var(--s));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crow2 {
+  display: flex;
+  align-items: center;
+  gap: calc(20px * var(--s));
+  margin-top: calc(10px * var(--s));
+  font-size: calc(26px * var(--s));
+  color: #888;
+}
+.cpending {
+  color: #e08a3a;
+  font-weight: 600;
+}
+.carrow {
+  font-size: calc(52px * var(--s));
+  color: #ccc;
+  flex: none;
+}
+.cempty {
+  text-align: center;
+  color: #9a9a9c;
+  font-size: calc(32px * var(--s));
+  line-height: 1.8;
+  padding: calc(100px * var(--s)) 0;
+}
+
+/* 弹窗 */
+.create-mask {
   position: absolute;
-  right: 0;
-  bottom: 0;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.create-box {
+  width: calc(938px * var(--s));
+  max-height: 86%;
+  overflow-y: auto;
+  padding: calc(44px * var(--s)) calc(45px * var(--s));
+  border-radius: calc(24px * var(--s));
+  background: #fff;
+  box-shadow: 0 calc(8px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.25);
+}
+.c-title {
+  font-size: calc(48px * var(--s));
+  font-weight: 700;
+  margin-bottom: calc(24px * var(--s));
+}
+.c-label {
+  font-size: calc(34px * var(--s));
+  color: #888;
+  margin: calc(28px * var(--s)) 0 calc(14px * var(--s));
+}
+.c-input {
+  width: 100%;
+  height: calc(100px * var(--s));
+  border: 1px solid #e6e6e6;
+  border-radius: calc(16px * var(--s));
+  background: #f7f7f8;
+  padding: 0 calc(28px * var(--s));
+  font-size: calc(38px * var(--s));
+  outline: none;
+}
+.c-err {
+  margin-top: calc(20px * var(--s));
+  color: #e05a5a;
+  font-size: calc(30px * var(--s));
+}
+.c-confirm {
+  width: 100%;
+  height: calc(112px * var(--s));
+  margin-top: calc(44px * var(--s));
+  border: none;
+  border-radius: calc(56px * var(--s));
+  background: linear-gradient(90deg, #14d3b6, #08c0a0);
+  color: #fff;
+  font-size: calc(42px * var(--s));
+  font-weight: 600;
+  cursor: pointer;
+}
+.c-confirm:disabled {
+  opacity: 0.6;
+}
+.pick-item {
+  display: flex;
+  align-items: center;
+  gap: calc(20px * var(--s));
+  padding: calc(24px * var(--s)) calc(12px * var(--s));
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+}
+.pick-av {
+  width: calc(80px * var(--s));
+  height: calc(80px * var(--s));
+  border-radius: calc(18px * var(--s));
+  object-fit: cover;
+}
+.pick-name {
+  font-size: calc(38px * var(--s));
+  font-weight: 600;
+}
+.pick-no {
+  font-size: calc(28px * var(--s));
+  color: #b0b0b0;
+}
+
+/* 头像上传 */
+.av-up {
+  display: flex;
+  align-items: center;
+  gap: calc(24px * var(--s));
+  cursor: pointer;
+}
+.av-box {
   width: calc(120px * var(--s));
   height: calc(120px * var(--s));
-  background: url(/assets/hall/played_ribbon.png) right bottom / 100% 100% no-repeat;
-  pointer-events: none;
+  border-radius: calc(24px * var(--s));
+  background: #f0f2f1;
+  border: calc(3px * var(--s)) dashed #cfd6d2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: none;
 }
-.room-played i {
-  position: absolute;
-  right: calc(2px * var(--s));
-  bottom: calc(24px * var(--s));
-  width: calc(110px * var(--s));
-  text-align: center;
-  transform: rotate(-45deg);
-  transform-origin: center;
-  font-size: calc(22px * var(--s));
-  font-style: normal;
-  font-weight: 600;
-  color: #3fb98a;
+.av-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.av-plus {
+  font-size: calc(56px * var(--s));
+  color: #b0bab4;
+}
+.av-hint {
+  font-size: calc(30px * var(--s));
+  color: #8a9a93;
+}
+.av-file {
+  display: none;
 }
 </style>

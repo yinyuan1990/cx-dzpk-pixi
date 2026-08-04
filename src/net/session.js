@@ -17,7 +17,7 @@ export const MSG = {
   CLUB_CREATE: 420, CLUB_LIST: 421, CLUB_APPLY: 422, CLUB_APPLY_LIST: 423,
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
-  CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431, GPS_REPORT: 432,
+  CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431, GPS_REPORT: 432, CLUB_UPDATE: 433,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
@@ -29,7 +29,7 @@ export const MSG = {
   CLUB_CREATE_RES: 480, CLUB_LIST_RES: 481, CLUB_APPLY_RES: 482, CLUB_APPLY_LIST_RES: 483,
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   DIAMOND_WARNING: 488, CLUB_SCORE_LOGS_RES: 489,
-  GIFT_LIST_RES: 490, ROOM_GIFT: 491, ROOM_OPTIONS_RES: 492,
+  GIFT_LIST_RES: 490, ROOM_GIFT: 491, ROOM_OPTIONS_RES: 492, CLUB_UPDATE_RES: 493,
   ERROR: 499,
 }
 
@@ -222,8 +222,12 @@ export async function clubApplyFlow(code) {
   return res.data
 }
 
-/** 待审批列表(群主/管理员)。[{requestId,userId,nickname,codeType,inviterUserId,time}] */
-export async function clubApplyListFlow(clubId) {
+/**
+ * 待审批列表(群主/管理员)。clubId=0 = 聚合我管理的全部俱乐部(顶栏消息弹框,
+ * 对齐扯旋 getAllMyClubsJoinRequests,项多带 clubId/clubName)。
+ * [{requestId,clubId?,clubName?,userId,nickname,codeType,inviterUserId,time}]
+ */
+export async function clubApplyListFlow(clubId = 0) {
   const sock = await ensureSocket()
   const res = await sock.request(MSG.CLUB_APPLY_LIST, { clubId }, { resType: MSG.CLUB_APPLY_LIST_RES })
   return (res.data && res.data.requests) || []
@@ -270,6 +274,14 @@ export async function clubQuitFlow(clubId) {
 export async function clubDissolveFlow(clubId) {
   const sock = await ensureSocket()
   const res = await sock.request(MSG.CLUB_DISSOLVE, { clubId }, { resType: MSG.CLUB_OP_RES })
+  return res.data
+}
+
+/** 修改俱乐部资料(群主/管理员,对齐扯旋 updateClub):头像/名称/简介/公告 */
+export async function clubUpdateFlow({ clubId, name, remark, avatar, notice }) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.CLUB_UPDATE, { clubId, name, remark, avatar, notice },
+    { resType: MSG.CLUB_UPDATE_RES })
   return res.data
 }
 
@@ -666,10 +678,10 @@ export async function clubScoreLogsFlow({ clubId, userId = 0, limit = 50 }) {
   return (res.data && res.data.logs) || []
 }
 
-/** 我的战绩:{records:[周期/站起结算列表], stats:{sessions,totalProfit,totalHands,...}} */
-export async function myRecordsFlow(limit = 20) {
+/** 我的战绩:{records:[周期/站起结算列表], stats:{...}}。clubId>0 = 只看该俱乐部(对齐扯旋 gameSummary) */
+export async function myRecordsFlow(limit = 20, clubId = 0) {
   const sock = await ensureSocket()
-  const res = await sock.request(MSG.MY_RECORDS, { limit }, { resType: MSG.MY_RECORDS_RES })
+  const res = await sock.request(MSG.MY_RECORDS, { limit, clubId }, { resType: MSG.MY_RECORDS_RES })
   return res.data || { records: [], stats: {} }
 }
 
