@@ -3,7 +3,6 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
-import CreateRoomPopup from '../components/CreateRoomPopup.vue'
 import { roomListFlow, getLoginInfo, myRecordsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
@@ -68,12 +67,7 @@ function onEnter(tb) {
   router.push('/table/' + tb.roomId)
 }
 
-// ===== 创建房间(共用 CreateRoomPopup:全量参数,可选档来自后台配置) =====
-const showCreate = ref(false)
-function onCreated(room) {
-  showCreate.value = false
-  onEnter({ roomId: room.roomId, name: room.name, sb: room.sb, bb: room.bb })
-}
+// 大厅不再建房:大厅本质是系统创建的公共俱乐部(后续接入),建房入口只在俱乐部详情页
 
 // ===== 我的战绩(周期/站起结算记录,411/471) =====
 const showRecords = ref(false)
@@ -149,7 +143,6 @@ function onTab(key) {
         <span class="ftext" :data-text="f">{{ f }}</span>
         <span class="fline" v-show="activeFilter === f"></span>
       </button>
-      <button class="create-btn" @click="showCreate = true">+ {{ t('hall.create') }}</button>
     </div>
 
     <!-- 牌局列表 -->
@@ -200,15 +193,6 @@ function onTab(key) {
         </template>
       </div>
     </div>
-
-    <!-- 创建房间弹窗(大厅/俱乐部共用组件) -->
-    <CreateRoomPopup
-      :show="showCreate"
-      :club-id="0"
-      :name-placeholder="game.user.nickname ? game.user.nickname + '的牌局' : '牌局名称'"
-      @close="showCreate = false"
-      @created="onCreated"
-    />
 
     <HallBottomBar :active="activeTab" @change="onTab" />
   </div>
@@ -368,19 +352,6 @@ function onTab(key) {
   border-radius: 999px;
   background: #08c0a0;
 }
-.create-btn {
-  margin-left: auto;
-  height: calc(72px * var(--s));
-  padding: 0 calc(36px * var(--s));
-  border: none;
-  border-radius: calc(36px * var(--s));
-  background: linear-gradient(90deg, #14d3b6, #08c0a0);
-  color: #fff;
-  font-size: calc(36px * var(--s));
-  font-weight: 600;
-  cursor: pointer;
-}
-
 .list {
   position: absolute;
   top: calc(700px * var(--s) + var(--sat, 0px));

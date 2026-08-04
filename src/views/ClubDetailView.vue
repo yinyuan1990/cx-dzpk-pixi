@@ -9,8 +9,6 @@ import {
 } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
-import CreateRoomPopup from '../components/CreateRoomPopup.vue'
-
 // 俱乐部详情:牌局(该俱乐部房间) / 成员(角色管理) / 审批。
 // 权限对齐扯旋:建房=群主/管理员;设管理员=群主;设合伙人=群主或(管理/合伙人的直推);
 // 踢人=群主/管理员任意、合伙人限直推;审批=群主/管理员。
@@ -63,11 +61,9 @@ function onEnter(tb) {
   router.push('/table/' + tb.roomId)
 }
 
-// 建房(群主/管理员):与大厅共用 CreateRoomPopup,全量参数 + 后台档位驱动
-const showCreate = ref(false)
-function onCreated(room) {
-  showCreate.value = false
-  onEnter({ roomId: room.roomId, name: room.name, sb: room.sb, bb: room.bb })
+// 建房(群主/管理员):跳独立建房页(对标 Unity 排版)
+function onCreateRoom() {
+  router.push({ path: `/create-room/${clubId}`, query: { clubName: club.value ? club.value.name : '' } })
 }
 
 // ===== 成员 =====
@@ -264,7 +260,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
           <span class="invite" @click="copyInvite">邀请码 {{ club.myInviteCode }}</span>
         </div>
       </div>
-      <button v-if="canManage" class="tbtn" @click="showCreate = true">+ 建牌局</button>
+      <button v-if="canManage" class="tbtn" @click="onCreateRoom">+ 建牌局</button>
     </div>
 
     <div class="tabs">
@@ -359,16 +355,6 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <button v-else class="dz-btn" @click="onDissolve">解散俱乐部</button>
       </div>
     </div>
-
-    <!-- 建牌局弹窗(与大厅共用组件,全量参数,多挂 clubId) -->
-    <CreateRoomPopup
-      :show="showCreate"
-      :club-id="clubId"
-      title="创建俱乐部牌局"
-      :name-placeholder="(club ? club.name : '') + '的牌局'"
-      @close="showCreate = false"
-      @created="onCreated"
-    />
 
     <!-- 积分操作弹窗(增发/核销/上分/下分/赠送) -->
     <div v-if="scoreOp" class="create-mask" @click.self="scoreOp = null">

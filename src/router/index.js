@@ -8,6 +8,8 @@ const routes = [
   { path: '/friend', name: 'friend', component: () => import('../views/FriendView.vue') },
   { path: '/club', name: 'club', component: () => import('../views/ClubView.vue') },
   { path: '/club/:id', name: 'clubDetail', component: () => import('../views/ClubDetailView.vue') },
+  // 建房独立页(只有俱乐部可建房;大厅=系统公共俱乐部,后续接入)
+  { path: '/create-room/:clubId', name: 'createRoom', component: () => import('../views/CreateRoomView.vue') },
   // 牌桌(多玩法复用同一壳,玩法用 query/param 区分)
   { path: '/table/:id?', name: 'table', component: () => import('../views/TableView.vue') },
 ]
