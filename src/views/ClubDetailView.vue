@@ -256,6 +256,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
   <div class="stage-root clubdetail">
     <div class="top">
       <button class="back" @click="router.push('/club')">&#8249;</button>
+      <img v-if="club && club.avatar" :src="club.avatar" class="cav" />
       <div class="tinfo" v-if="club">
         <div class="tname">{{ club.name }}</div>
         <div class="tsub">
@@ -448,6 +449,13 @@ onBeforeUnmount(() => clearInterval(pollTimer))
   background: #fff;
   font-size: calc(44px * var(--s));
   cursor: pointer;
+  flex: none;
+}
+.cav {
+  width: calc(84px * var(--s));
+  height: calc(84px * var(--s));
+  border-radius: calc(20px * var(--s));
+  object-fit: cover;
   flex: none;
 }
 .tinfo {

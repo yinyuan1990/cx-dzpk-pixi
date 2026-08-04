@@ -3,8 +3,10 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { accountLoginFlow, accountRegisterFlow, loginFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
+import { DEFAULT_AVATARS } from '../config/defaultAvatars'
 
-// 账号密码登录/注册:HTTP(/api/auth) 代理主服换 JWT,再走 WS 验签登录。
+// 独立账号登录/注册(dz_user 本地库,注册字段对标扯旋:
+//   phone/username/avatar/password/confirmPassword/registerDevice)。
 // 游客登录已移除;开发模式(vite dev)保留一个游客直连入口方便联调。
 const router = useRouter()
 const game = useGameStore()
@@ -14,7 +16,9 @@ const isDev = import.meta.env.DEV
 const mode = ref('login') // login | register
 const phone = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const nickname = ref('')
+const avatar = ref(DEFAULT_AVATARS[0])
 const busy = ref(false)
 const errMsg = ref('')
 
@@ -51,10 +55,17 @@ async function onSubmit() {
     errMsg.value = '请输入账号和密码'
     return
   }
+  if (mode.value === 'register') {
+    if (!nickname.value.trim()) { errMsg.value = '请输入昵称'; return }
+    if (password.value !== confirmPassword.value) { errMsg.value = '两次密码输入不一致'; return }
+  }
   busy.value = true
   try {
     const res = mode.value === 'register'
-      ? await accountRegisterFlow({ phone: ph, password: password.value, nickname: nickname.value.trim() })
+      ? await accountRegisterFlow({
+          phone: ph, password: password.value, confirmPassword: confirmPassword.value,
+          username: nickname.value.trim(), avatar: avatar.value,
+        })
       : await accountLoginFlow({ phone: ph, password: password.value })
     remember(res)
     game.applyLogin(res)
@@ -101,9 +112,18 @@ async function onGuestLogin() {
       <div class="input-row">
         <input v-model="password" class="edit nopad" type="password" placeholder="请输入密码(字母+数字 6-20位)" maxlength="20" @keyup.enter="onSubmit" />
       </div>
-      <div v-if="mode === 'register'" class="input-row">
-        <input v-model="nickname" class="edit nopad" placeholder="昵称(选填)" maxlength="12" @keyup.enter="onSubmit" />
-      </div>
+      <template v-if="mode === 'register'">
+        <div class="input-row">
+          <input v-model="confirmPassword" class="edit nopad" type="password" placeholder="请再次输入密码" maxlength="20" @keyup.enter="onSubmit" />
+        </div>
+        <div class="input-row">
+          <input v-model="nickname" class="edit nopad" placeholder="昵称(最长4个汉字,不能纯数字)" maxlength="8" @keyup.enter="onSubmit" />
+        </div>
+        <div class="avatar-pick">
+          <img v-for="a in DEFAULT_AVATARS" :key="a" :src="a" class="avatar-item"
+            :class="{ on: avatar === a }" @click="avatar = a" />
+        </div>
+      </template>
 
       <div v-if="errMsg" class="login-err">{{ errMsg }}</div>
 
@@ -222,6 +242,24 @@ async function onGuestLogin() {
   color: #08c0a0;
   font-size: calc(34px * var(--s));
   cursor: pointer;
+}
+
+.avatar-pick {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(14px * var(--s));
+  justify-content: center;
+}
+.avatar-item {
+  width: calc(88px * var(--s));
+  height: calc(88px * var(--s));
+  border-radius: 50%;
+  border: calc(4px * var(--s)) solid transparent;
+  cursor: pointer;
+}
+.avatar-item.on {
+  border-color: #08c0a0;
 }
 
 .dev-guest {

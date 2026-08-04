@@ -19,10 +19,12 @@ const { t } = useI18n()
 const creating = ref(false)
 const errMsg = ref('')
 const form = ref({
-  name: '', sb: 100, maxPlayers: 9, settleTimeMins: 30, rakePercent: 5,
+  name: '', sb: 100, maxPlayers: 9, settleTimeMins: 30,
+  rakePercent: 0,      // 费率%:拖动条(对齐Unity 0~5默认0);仅俱乐部房可设,大厅强制0
   opTimeSec: 15,       // 思考时间(秒)
   anteMode: 0,         // 前注:0无 1半盲 2一个大盲
-  inMaxRate: 4,        // 最大带入 = 100BB × 倍数
+  inMinRate: 1,        // 带入倍数区间下限(对齐Unity双把手)
+  inMaxRate: 4,        // 带入倍数区间上限;带入 = 100BB × 倍数
   straddleOn: false,   // 抓头
   insuranceOn: false,  // 保险(河牌保险)
   muckOn: false,       // 埋牌(只亮赢家)
@@ -40,10 +42,8 @@ const BLIND_PRESETS = ref([
 ])
 const SETTLE_PRESETS = ref([30, 45, 60, 90, 120])
 const OPTIME_PRESETS = ref([10, 15, 20, 30])
-const MAXRATE_PRESETS = ref([
-  { rate: 2, label: '200BB' }, { rate: 4, label: '400BB' }, { rate: 10, label: '1000BB' },
-])
-const RAKE_PRESETS = ref([0, 3, 5, 10])
+const RAKE_MAX = ref(5)      // 费率拖动条上限(后台可配)
+const IN_RATE_MAX = ref(8)   // 带入倍数区间上限(后台可配)
 const MINTIME_PRESETS = ref([
   { v: 0, label: '不限' }, { v: 30, label: '30分钟' }, { v: 60, label: '60分钟' },
 ])
@@ -68,10 +68,8 @@ async function loadOptions() {
     }
     if (Array.isArray(o.settleTimes) && o.settleTimes.length) SETTLE_PRESETS.value = o.settleTimes.map(Number)
     if (Array.isArray(o.opTimes) && o.opTimes.length) OPTIME_PRESETS.value = o.opTimes.map(Number)
-    if (Array.isArray(o.maxRates) && o.maxRates.length) {
-      MAXRATE_PRESETS.value = o.maxRates.map((r) => ({ rate: Number(r), label: `${Number(r) * 100}BB` }))
-    }
-    if (Array.isArray(o.rakePercents) && o.rakePercents.length) RAKE_PRESETS.value = o.rakePercents.map(Number)
+    if (o.rakeMax != null) RAKE_MAX.value = Number(o.rakeMax)
+    if (o.inRateMax != null) IN_RATE_MAX.value = Number(o.inRateMax)
     if (Array.isArray(o.minTimes) && o.minTimes.length) {
       MINTIME_PRESETS.value = o.minTimes.map((v) => ({ v: Number(v), label: Number(v) === 0 ? '不限' : `${v}分钟` }))
     }
@@ -82,9 +80,20 @@ async function loadOptions() {
   if (!BLIND_PRESETS.value.some((p) => p.sb === f.sb)) f.sb = BLIND_PRESETS.value[0].sb
   if (!SETTLE_PRESETS.value.includes(f.settleTimeMins)) f.settleTimeMins = SETTLE_PRESETS.value[0]
   if (!OPTIME_PRESETS.value.includes(f.opTimeSec)) f.opTimeSec = OPTIME_PRESETS.value[0]
-  if (!MAXRATE_PRESETS.value.some((p) => p.rate === f.inMaxRate)) f.inMaxRate = MAXRATE_PRESETS.value[0].rate
-  if (!RAKE_PRESETS.value.includes(f.rakePercent)) f.rakePercent = RAKE_PRESETS.value[0]
+  if (f.rakePercent > RAKE_MAX.value) f.rakePercent = RAKE_MAX.value
+  if (f.inMaxRate > IN_RATE_MAX.value) f.inMaxRate = IN_RATE_MAX.value
+  if (f.inMinRate > f.inMaxRate) f.inMinRate = 1
   if (!MINTIME_PRESETS.value.some((p) => p.v === f.gameMinTime)) f.gameMinTime = MINTIME_PRESETS.value[0].v
+}
+
+// 带入倍数双把手:拖动时互相约束(min ≤ max)
+function onMinRate(v) {
+  form.value.inMinRate = Number(v)
+  if (form.value.inMaxRate < form.value.inMinRate) form.value.inMaxRate = form.value.inMinRate
+}
+function onMaxRate(v) {
+  form.value.inMaxRate = Number(v)
+  if (form.value.inMinRate > form.value.inMaxRate) form.value.inMinRate = form.value.inMaxRate
 }
 watch(() => props.show, (v) => { if (v) { errMsg.value = ''; loadOptions() } })
 
@@ -100,11 +109,11 @@ async function onCreate() {
       sb: f.sb,
       maxPlayers: f.maxPlayers,
       settleTimeMins: f.settleTimeMins,
-      rakePercent: f.rakePercent,
+      rakePercent: props.clubId > 0 ? f.rakePercent : 0, // 大厅房强制0(对齐Unity)
       opTimeSec: f.opTimeSec,
       ante: f.anteMode === 2 ? bb : f.anteMode === 1 ? f.sb : 0,
       inChip: bb * 100,
-      inMinRate: 1,
+      inMinRate: f.inMinRate,
       inMaxRate: f.inMaxRate,
       straddleOn: f.straddleOn ? 1 : 0,
       insuranceOn: f.insuranceOn ? 1 : 0,
@@ -152,11 +161,14 @@ async function onCreate() {
           @click="form.settleTimeMins = m">{{ m }}{{ t('hall.mins') }}</button>
       </div>
 
-      <div class="c-label">{{ t('hall.rake') }}</div>
-      <div class="c-opts">
-        <button v-for="r in RAKE_PRESETS" :key="r" class="c-opt" :class="{ on: form.rakePercent === r }"
-          @click="form.rakePercent = r">{{ r }}%</button>
-      </div>
+      <!-- 费率:拖动条(对齐Unity 服务费0~5%);仅俱乐部房显示,大厅房强制0 -->
+      <template v-if="props.clubId > 0">
+        <div class="c-label">服务费(费率) <span class="c-val">{{ form.rakePercent }}%</span></div>
+        <input type="range" class="c-slider" min="0" :max="RAKE_MAX" step="1" v-model.number="form.rakePercent" />
+        <div class="c-ticks">
+          <span v-for="i in RAKE_MAX + 1" :key="i">{{ i - 1 }}</span>
+        </div>
+      </template>
 
       <div class="c-label">思考时间</div>
       <div class="c-opts">
@@ -164,10 +176,19 @@ async function onCreate() {
           @click="form.opTimeSec = s">{{ s }}秒</button>
       </div>
 
-      <div class="c-label">最大带入(最小 100BB)</div>
-      <div class="c-opts">
-        <button v-for="p in MAXRATE_PRESETS" :key="p.rate" class="c-opt" :class="{ on: form.inMaxRate === p.rate }"
-          @click="form.inMaxRate = p.rate">{{ p.label }}</button>
+      <!-- 带入倍数:双把手区间(对齐Unity inmnr/inmxr),带入 = 100BB × 倍数 -->
+      <div class="c-label">
+        带入范围 <span class="c-val">{{ form.inMinRate * 100 }}BB ~ {{ form.inMaxRate * 100 }}BB</span>
+      </div>
+      <div class="c-range-row">
+        <span class="c-range-tag">最小</span>
+        <input type="range" class="c-slider" min="1" :max="IN_RATE_MAX" step="1"
+          :value="form.inMinRate" @input="onMinRate($event.target.value)" />
+      </div>
+      <div class="c-range-row">
+        <span class="c-range-tag">最大</span>
+        <input type="range" class="c-slider" min="1" :max="IN_RATE_MAX" step="1"
+          :value="form.inMaxRate" @input="onMaxRate($event.target.value)" />
       </div>
 
       <div class="c-label">前注</div>
@@ -261,6 +282,34 @@ async function onCreate() {
 .c-opt-sm {
   padding: 0 calc(20px * var(--s));
   font-size: calc(28px * var(--s));
+}
+.c-val {
+  color: #08a88c;
+  font-weight: 700;
+}
+.c-slider {
+  width: 100%;
+  height: calc(56px * var(--s));
+  accent-color: #08c0a0;
+  cursor: pointer;
+}
+.c-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 calc(10px * var(--s));
+  font-size: calc(26px * var(--s));
+  color: #aaa;
+}
+.c-range-row {
+  display: flex;
+  align-items: center;
+  gap: calc(20px * var(--s));
+}
+.c-range-tag {
+  flex: none;
+  font-size: calc(28px * var(--s));
+  color: #888;
+  width: calc(80px * var(--s));
 }
 .c-err {
   margin-top: calc(24px * var(--s));

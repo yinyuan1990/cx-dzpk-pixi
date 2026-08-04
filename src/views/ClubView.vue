@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import HallBottomBar from '../components/HallBottomBar.vue'
 import { clubListFlow, clubCreateFlow, clubApplyFlow, getLoginInfo, onClubNotify } from '../net/session.js'
+import { DEFAULT_AVATARS } from '../config/defaultAvatars'
 
 // 俱乐部列表页:我的俱乐部 / 创建 / 申请加入(421 / 420 / 422)。
 const router = useRouter()
@@ -45,19 +46,22 @@ function openClub(c) {
   router.push('/club/' + c.clubId)
 }
 
-// ===== 创建俱乐部 =====
+// ===== 创建俱乐部(参数对齐扯旋:名称+简介+头像,公告建后再改) =====
+const CLUB_AVATARS = DEFAULT_AVATARS
 const showCreate = ref(false)
 const creating = ref(false)
-const createForm = ref({ name: '', notice: '' })
+const createForm = ref({ name: '', remark: '', avatar: CLUB_AVATARS[0] })
 async function onCreate() {
   if (creating.value) return
-  if (!createForm.value.name.trim()) { errMsg.value = '请输入俱乐部名称'; return }
+  const f = createForm.value
+  if (!f.name.trim()) { errMsg.value = '请输入俱乐部名称'; return }
+  if (!f.remark.trim()) { errMsg.value = '请输入俱乐部简介'; return }
   creating.value = true
   errMsg.value = ''
   try {
-    const res = await clubCreateFlow({ name: createForm.value.name.trim(), notice: createForm.value.notice })
+    const res = await clubCreateFlow({ name: f.name.trim(), remark: f.remark.trim(), avatar: f.avatar })
     showCreate.value = false
-    createForm.value = { name: '', notice: '' }
+    createForm.value = { name: '', remark: '', avatar: CLUB_AVATARS[0] }
     okMsg.value = `俱乐部创建成功,编号 ${res.clubNo}`
     setTimeout(() => { okMsg.value = '' }, 4000)
     await loadClubs()
@@ -112,12 +116,14 @@ function onTab(key) {
 
     <div class="list">
       <div class="item" v-for="c in clubs" :key="c.clubId" @click="openClub(c)">
-        <div class="badge">{{ (c.name || '?')[0] }}</div>
+        <img v-if="c.avatar" :src="c.avatar" class="badge badge-img" />
+        <div v-else class="badge">{{ (c.name || '?')[0] }}</div>
         <div class="mid">
           <div class="row1">
             <span class="cname">{{ c.name }}</span>
             <span class="cno">#{{ c.clubNo }}</span>
           </div>
+          <div v-if="c.remark" class="remark">{{ c.remark }}</div>
           <div class="row2">
             <span class="role" :class="'r' + c.myRole">{{ ROLE_TXT[c.myRole] || '成员' }}</span>
             <span class="cnt">{{ c.memberCount }} 人</span>
@@ -135,10 +141,15 @@ function onTab(key) {
     <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
       <div class="create-box">
         <div class="c-title">创建俱乐部</div>
-        <div class="c-label">名称</div>
-        <input v-model="createForm.name" class="c-input" placeholder="俱乐部名称" maxlength="16" />
-        <div class="c-label">公告(选填)</div>
-        <input v-model="createForm.notice" class="c-input" placeholder="俱乐部公告" maxlength="64" />
+        <div class="c-label">头像</div>
+        <div class="av-grid">
+          <img v-for="a in CLUB_AVATARS" :key="a" :src="a" class="av-item"
+            :class="{ on: createForm.avatar === a }" @click="createForm.avatar = a" />
+        </div>
+        <div class="c-label">名称(最长 4 个汉字,不能纯数字)</div>
+        <input v-model="createForm.name" class="c-input" placeholder="俱乐部名称" maxlength="8" />
+        <div class="c-label">简介(必填)</div>
+        <input v-model="createForm.remark" class="c-input" placeholder="一句话介绍你的俱乐部" maxlength="100" />
         <div v-if="errMsg" class="c-err">{{ errMsg }}</div>
         <button class="c-confirm" :disabled="creating" @click="onCreate">
           {{ creating ? '创建中…' : '创建' }}
@@ -257,6 +268,32 @@ function onTab(key) {
   align-items: center;
   justify-content: center;
   flex: none;
+}
+.badge-img {
+  object-fit: cover;
+}
+.remark {
+  font-size: calc(26px * var(--s));
+  color: #9a9a9c;
+  margin-top: calc(6px * var(--s));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.av-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(16px * var(--s));
+}
+.av-item {
+  width: calc(96px * var(--s));
+  height: calc(96px * var(--s));
+  border-radius: calc(20px * var(--s));
+  border: calc(4px * var(--s)) solid transparent;
+  cursor: pointer;
+}
+.av-item.on {
+  border-color: #08c0a0;
 }
 .mid {
   flex: 1;

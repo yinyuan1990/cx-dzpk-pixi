@@ -103,9 +103,13 @@ export async function accountLoginFlow({ phone, password }) {
   return { ...login, token: auth.token }
 }
 
-/** 注册(注册成功即自动登录) */
-export async function accountRegisterFlow({ phone, password, nickname }) {
-  const auth = await authRequest('/api/auth/register', { phone, password, nickname })
+/** 注册(字段对标扯旋 RegisterRequest;成功即自动登录) */
+export async function accountRegisterFlow({ phone, password, confirmPassword, username, avatar }) {
+  const auth = await authRequest('/api/auth/register', {
+    phone, username, avatar,
+    password, confirmPassword,
+    registerDevice: 3, // Web
+  })
   const login = await loginFlow({ nickname: auth.nickname, token: auth.token })
   return { ...login, token: auth.token }
 }
@@ -172,10 +176,10 @@ export async function insuranceBuy(roomId, amount) {
 // 俱乐部(德州独立俱乐部,规则对齐扯旋)
 // ---------------------------------------------------------------
 
-/** 创建俱乐部。返回 {clubId,clubNo,name,myInviteCode,diamondCost,diamond} */
-export async function clubCreateFlow({ name, notice = '' }) {
+/** 创建俱乐部(参数对齐扯旋:名称+简介+头像)。返回 {clubId,clubNo,name,myInviteCode,diamondCost,diamond} */
+export async function clubCreateFlow({ name, remark, avatar }) {
   const sock = await ensureSocket()
-  const res = await sock.request(MSG.CLUB_CREATE, { name, notice }, { resType: MSG.CLUB_CREATE_RES })
+  const res = await sock.request(MSG.CLUB_CREATE, { name, remark, avatar }, { resType: MSG.CLUB_CREATE_RES })
   if (_login && res.data && res.data.diamond != null) _login.diamond = res.data.diamond
   return res.data
 }
