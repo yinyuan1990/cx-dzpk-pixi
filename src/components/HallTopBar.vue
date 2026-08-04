@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useGameStore } from '../stores/game.js'
 import { appConfigFlow, clubApplyListFlow, clubReviewFlow, getLoginInfo, onClubNotify } from '../net/session.js'
 import PullRefresh from './PullRefresh.vue'
+import iconZuanshi from '../assets/icon_zuanshi.png'
 
 // 5 个 tab 页公用顶栏:左 = 头像/昵称/6位ID,右 = 钻石 + 消息(俱乐部待审,红点) + 分享。
 // 消息对齐扯旋:大厅 AT_NoticeBtn + CLUB_JOIN 红点 → ClubNoticePanel(聚合全部俱乐部待审)。
@@ -109,7 +110,7 @@ onBeforeUnmount(() => { if (offNotify) offNotify() })
     </div>
     <div class="tb-right">
       <div class="tb-diamond">
-        <span class="tb-gem">&#9670;</span>
+        <img class="tb-gem" :src="iconZuanshi" alt="钻石" />
         <span class="tb-cnt">{{ game.user.idou }}</span>
       </div>
       <button class="tb-bell" @click="openNotice" aria-label="消息">
@@ -212,8 +213,9 @@ onBeforeUnmount(() => { if (offNotify) offNotify() })
   box-shadow: 0 calc(2px * var(--s)) calc(8px * var(--s)) rgba(0, 0, 0, 0.06);
 }
 .tb-gem {
-  color: #3bb7f0;
-  font-size: calc(32px * var(--s));
+  width: calc(40px * var(--s));
+  height: calc(40px * var(--s));
+  object-fit: contain;
 }
 .tb-cnt {
   font-size: calc(32px * var(--s));

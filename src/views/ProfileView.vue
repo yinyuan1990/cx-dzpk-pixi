@@ -6,6 +6,7 @@ import HallTopBar from '../components/HallTopBar.vue'
 import { logout, updateProfileFlow, changePasswordFlow, uploadImageFlow } from '../net/session.js'
 import { compressAvatar } from '../utils/imageCompress.js'
 import { useGameStore } from '../stores/game.js'
+import iconZuanshi from '../assets/icon_zuanshi.png'
 
 // 我的 tab:头像/昵称修改 + 修改登录密码 + 退出登录
 const router = useRouter()
@@ -129,7 +130,7 @@ function onLogout() {
           <span class="pf-right"><b>{{ game.user.nickname || '-' }}</b><i class="pf-arrow">&#8250;</i></span>
         </div>
         <div class="pf-row"><span>ID</span><b>{{ game.user.numberId || '-' }}</b></div>
-        <div class="pf-row"><span>钻石</span><b>{{ game.user.idou }}</b></div>
+        <div class="pf-row"><span>钻石</span><b class="pf-gem-val"><img class="pf-gem" :src="iconZuanshi" alt="" />{{ game.user.idou }}</b></div>
         <!-- 修改密码 -->
         <div class="pf-row clickable" @click="openPwd">
           <span>登录密码</span>
@@ -215,6 +216,16 @@ function onLogout() {
   height: calc(110px * var(--s));
   border-bottom: 1px solid #f3f3f4;
   font-size: calc(34px * var(--s));
+}
+.pf-gem-val {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--s));
+}
+.pf-gem {
+  width: calc(38px * var(--s));
+  height: calc(38px * var(--s));
+  object-fit: contain;
 }
 .pf-row:last-child {
   border-bottom: none;
