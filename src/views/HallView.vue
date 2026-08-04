@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
+import HallTopBar from '../components/HallTopBar.vue'
 import { roomListFlow, getLoginInfo, myRecordsFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
 import { formatKNotation } from '../utils/format'
@@ -47,14 +48,12 @@ async function loadRooms() {
   }
 }
 
-let pollTimer = null
+// 不做定时轮询(省流量/省后端):进页拉一次,手动点刷新按钮更新
 onMounted(() => {
   // 未登录(直接刷到 /hall)回登录页
   if (!getLoginInfo()) { router.replace('/login'); return }
   loadRooms()
-  pollTimer = setInterval(loadRooms, 5000)
 })
-onBeforeUnmount(() => clearInterval(pollTimer))
 
 function onEnter(tb) {
   game.setEnterTarget({
@@ -105,25 +104,8 @@ function onTab(key) {
 
 <template>
   <div class="stage-root hall">
-    <!-- 顶部:头像 / 昵称 / 余额 -->
-    <div class="top">
-      <div class="user">
-        <div class="avatar">
-          <img v-if="/^https?:\/\//.test(game.user.avatar)" :src="game.user.avatar" alt="" />
-        </div>
-        <div class="uinfo">
-          <div class="nick">{{ game.user.nickname || 'Player' }}</div>
-          <div class="balance">
-            <span class="coin">&#9679;</span>
-            <span class="amt">{{ formatKNotation(game.user.chips) }}</span>
-          </div>
-        </div>
-      </div>
-      <div class="top-icons">
-        <button class="ic rec" @click="openRecords">战绩</button>
-        <button class="ic" :disabled="loading" @click="loadRooms">&#8635;</button>
-      </div>
-    </div>
+    <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/分享 -->
+    <HallTopBar />
 
     <!-- Banner -->
     <div class="banner">
@@ -143,6 +125,10 @@ function onTab(key) {
         <span class="ftext" :data-text="f">{{ f }}</span>
         <span class="fline" v-show="activeFilter === f"></span>
       </button>
+      <div class="f-actions">
+        <button class="ic rec" @click="openRecords">战绩</button>
+        <button class="ic" :disabled="loading" @click="loadRooms">&#8635;</button>
+      </div>
     </div>
 
     <!-- 牌局列表 -->
@@ -204,56 +190,11 @@ function onTab(key) {
   color: #2b2b2d;
 }
 
-.top {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: calc(180px * var(--s) + var(--sat, 0px));
+.f-actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 calc(40px * var(--s));
-  padding-top: calc(40px * var(--s) + var(--sat, 0px));
-}
-.user {
-  display: flex;
-  align-items: center;
-  gap: calc(20px * var(--s));
-}
-.avatar {
-  width: calc(96px * var(--s));
-  height: calc(96px * var(--s));
-  border-radius: 50%;
-  background: linear-gradient(135deg, #14d3b6, #08c0a0);
-  overflow: hidden;
-}
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.nick {
-  font-size: calc(38px * var(--s));
-  font-weight: 600;
-}
-.balance {
-  display: flex;
-  align-items: center;
-  gap: calc(10px * var(--s));
-  margin-top: calc(6px * var(--s));
-}
-.coin {
-  color: #f4b740;
-  font-size: calc(34px * var(--s));
-}
-.amt {
-  font-size: calc(34px * var(--s));
-  color: #555;
-}
-.top-icons {
-  display: flex;
-  gap: calc(24px * var(--s));
+  gap: calc(16px * var(--s));
 }
 .ic {
   width: calc(72px * var(--s));

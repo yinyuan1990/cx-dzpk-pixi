@@ -57,10 +57,11 @@ async function doLogin(sock) {
   const res = await sock.request(MSG.LOGIN, data, { resType: MSG.LOGIN_RES })
   _login = {
     userId: res.data.userId,
+    numberId: res.data.numberId || '', // 6位账号编号(对标扯旋,游客为空)
     nickname: res.data.nickname,
-    avatar: res.data.avatar || '', // 主服头像 URL(游客为空)
+    avatar: res.data.avatar || '',
     balance: res.data.balance ?? 0,
-    diamond: res.data.diamond ?? 0, // 平台公用钻石(主服账号才有,游客恒 0)
+    diamond: res.data.diamond ?? 0, // 独立钻石(dz_user,游客恒 0)
   }
   return _login
 }
@@ -101,6 +102,13 @@ export async function accountLoginFlow({ phone, password }) {
   const auth = await authRequest('/api/auth/login', { phone, password })
   const login = await loginFlow({ nickname: auth.nickname, token: auth.token })
   return { ...login, token: auth.token }
+}
+
+/** 客户端公开配置(分享地址等,管理台可改,点分享时实时拉取) */
+export async function appConfigFlow() {
+  const res = await fetch(resolveHttpBase() + '/api/app/config').then((r) => r.json())
+  if (res.code !== 0) throw new Error(res.msg || '配置拉取失败')
+  return res // { shareUrl }
 }
 
 /**

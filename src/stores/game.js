@@ -6,6 +6,7 @@ export const useGameStore = defineStore('game', {
   state: () => ({
     user: {
       userId: 0,
+      numberId: '', // 6位账号编号(对标扯旋)
       token: '',
       account: '',
       nickname: '',
@@ -41,6 +42,7 @@ export const useGameStore = defineStore('game', {
     applyLogin(login) {
       this.setUser({
         userId: login.userId,
+        numberId: login.numberId || '',
         nickname: login.nickname || '',
         avatar: login.avatar || '',
         chips: login.balance || 0,

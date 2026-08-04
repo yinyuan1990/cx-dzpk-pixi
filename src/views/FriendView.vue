@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HallBottomBar from '../components/HallBottomBar.vue'
+import HallTopBar from '../components/HallTopBar.vue'
 
 // 1:1 结构还原自 98modules/friendGame/FriendGameRoomHome.prefab + 控制器 index.js。
 // 真实结构：topheadContainer(顶部栏) -> TopArea(3 操作卡) -> middleArea(2 钻石卡) ->
@@ -69,21 +70,8 @@ function clickWorldCup() {} // -> 世界杯活动
 
 <template>
   <div class="stage-root friend">
-    <!-- topheadContainer：好友页顶部栏(TopHeadInfo · CREATE_ROOM 模式)。
-         左=白色圆角胶囊(round_100)内 金币/美元/钻石；右=深色动作图标(分享/体育/客服/消息) -->
-    <div class="top">
-      <div class="pill">
-        <span class="cur"><img src="/assets/hall/top_gold.png" alt="" /><b>1000</b></span>
-        <span class="cur"><img src="/assets/hall/top_usd.png" alt="" /><b>1000</b></span>
-        <span class="cur"><img src="/assets/hall/top_diamond.png" alt="" /><b>0</b></span>
-      </div>
-      <div class="top-icons">
-        <button class="tbtn"><img src="/assets/hall/top_link.png" alt="" /></button>
-        <button class="tbtn sport"><img src="/assets/hall/top_sport.png" alt="" /></button>
-        <button class="tbtn"><img src="/assets/hall/top_customer.png" alt="" /></button>
-        <button class="tbtn"><img src="/assets/hall/top_message.png" alt="" /></button>
-      </div>
-    </div>
+    <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/分享(5 个 tab 页统一) -->
+    <HallTopBar />
 
     <!-- mainInfo：可滚动主体 -->
     <div class="main">
@@ -213,74 +201,10 @@ function clickWorldCup() {} // -> 世界杯活动
   color: #2b2b2d;
 }
 
-/* topheadContainer 顶部栏（1080×100，widget top=20，左右 margin 40）+ 齐刘海安全区 */
-.top {
-  position: absolute;
-  top: calc(20px * var(--s) + var(--sat, 0px));
-  left: 0;
-  width: 100%;
-  height: calc(100px * var(--s));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 calc(40px * var(--s));
-}
-.pill {
-  display: flex;
-  align-items: center;
-  height: calc(100px * var(--s));
-  padding: 0 calc(30px * var(--s));
-  gap: calc(20px * var(--s));
-  background: #ffffff;
-  border-radius: calc(50px * var(--s));
-}
-.cur {
-  display: flex;
-  align-items: center;
-  gap: calc(6px * var(--s));
-}
-.cur img {
-  width: calc(56px * var(--s));
-  height: calc(56px * var(--s));
-}
-.cur b {
-  font-size: calc(44px * var(--s));
-  font-weight: 600;
-  color: #3a3a3a;
-}
-.top-icons {
-  display: flex;
-  align-items: center;
-  height: calc(100px * var(--s));
-  padding: 0 calc(30px * var(--s));
-  gap: calc(50px * var(--s));
-  background: #ffffff;
-  border-radius: calc(50px * var(--s));
-}
-.tbtn {
-  width: calc(56px * var(--s));
-  height: calc(56px * var(--s));
-  border: none;
-  background: transparent;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.tbtn img {
-  width: calc(56px * var(--s));
-  height: calc(56px * var(--s));
-  object-fit: contain;
-}
-.tbtn.sport img {
-  width: calc(35px * var(--s));
-}
-
-/* mainInfo 滚动主体 */
+/* mainInfo 滚动主体(顶部让位给公用顶栏 180px) */
 .main {
   position: absolute;
-  top: calc(150px * var(--s) + var(--sat, 0px));
+  top: calc(190px * var(--s) + var(--sat, 0px));
   left: 0;
   width: 100%;
   bottom: calc(250px * var(--s) + var(--sab, 0px));

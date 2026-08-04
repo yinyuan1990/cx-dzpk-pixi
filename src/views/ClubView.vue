@@ -2,8 +2,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import HallBottomBar from '../components/HallBottomBar.vue'
-import { clubListFlow, clubCreateFlow, clubApplyFlow, getLoginInfo, onClubNotify } from '../net/session.js'
-import { DEFAULT_AVATARS } from '../config/defaultAvatars'
+import HallTopBar from '../components/HallTopBar.vue'
+import { clubListFlow, clubCreateFlow, clubApplyFlow, getLoginInfo, onClubNotify, uploadImageFlow } from '../net/session.js'
+import { compressAvatar } from '../utils/imageCompress.js'
 
 // 俱乐部列表页:我的俱乐部 / 创建 / 申请加入(421 / 420 / 422)。
 const router = useRouter()
@@ -47,13 +48,31 @@ function openClub(c) {
 }
 
 // ===== 创建俱乐部(参数对齐扯旋:名称+简介+头像,公告建后再改) =====
-const CLUB_AVATARS = DEFAULT_AVATARS
+// 头像 = 本地选图 → 压缩 → MinIO 直传(与注册头像同一条链路)
 const showCreate = ref(false)
 const creating = ref(false)
-const createForm = ref({ name: '', remark: '', avatar: CLUB_AVATARS[0] })
+const createForm = ref({ name: '', remark: '', avatar: '' })
+const avatarBusy = ref(false)
+const clubFileInput = ref(null)
+async function onPickClubAvatar(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file || avatarBusy.value) return
+  avatarBusy.value = true
+  errMsg.value = ''
+  try {
+    const blob = await compressAvatar(file)
+    createForm.value.avatar = await uploadImageFlow(blob, 'avatar', 'club.jpg')
+  } catch (err) {
+    errMsg.value = err.message || '头像上传失败'
+  } finally {
+    avatarBusy.value = false
+  }
+}
 async function onCreate() {
   if (creating.value) return
   const f = createForm.value
+  if (!f.avatar) { errMsg.value = '请上传俱乐部头像'; return }
   if (!f.name.trim()) { errMsg.value = '请输入俱乐部名称'; return }
   if (!f.remark.trim()) { errMsg.value = '请输入俱乐部简介'; return }
   creating.value = true
@@ -61,7 +80,7 @@ async function onCreate() {
   try {
     const res = await clubCreateFlow({ name: f.name.trim(), remark: f.remark.trim(), avatar: f.avatar })
     showCreate.value = false
-    createForm.value = { name: '', remark: '', avatar: CLUB_AVATARS[0] }
+    createForm.value = { name: '', remark: '', avatar: '' }
     okMsg.value = `俱乐部创建成功,编号 ${res.clubNo}`
     setTimeout(() => { okMsg.value = '' }, 4000)
     await loadClubs()
@@ -103,6 +122,9 @@ function onTab(key) {
 
 <template>
   <div class="stage-root clubpage">
+    <!-- 顶部公用栏:头像/昵称/6位ID + 钻石/分享 -->
+    <HallTopBar />
+
     <div class="top">
       <div class="title">俱乐部</div>
       <div class="top-btns">
@@ -141,10 +163,14 @@ function onTab(key) {
     <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
       <div class="create-box">
         <div class="c-title">创建俱乐部</div>
-        <div class="c-label">头像</div>
-        <div class="av-grid">
-          <img v-for="a in CLUB_AVATARS" :key="a" :src="a" class="av-item"
-            :class="{ on: createForm.avatar === a }" @click="createForm.avatar = a" />
+        <div class="c-label">头像(必传,自动压缩)</div>
+        <div class="av-up" @click="clubFileInput && clubFileInput.click()">
+          <div class="av-box">
+            <img v-if="createForm.avatar" :src="createForm.avatar" alt="" />
+            <span v-else class="av-plus">+</span>
+          </div>
+          <span class="av-hint">{{ avatarBusy ? '上传中…' : createForm.avatar ? '点击更换' : '选择图片' }}</span>
+          <input ref="clubFileInput" type="file" accept="image/*" class="av-file" @change="onPickClubAvatar" />
         </div>
         <div class="c-label">名称(最长 4 个汉字,不能纯数字)</div>
         <input v-model="createForm.name" class="c-input" placeholder="俱乐部名称" maxlength="8" />
@@ -181,15 +207,14 @@ function onTab(key) {
 }
 .top {
   position: absolute;
-  top: 0;
+  top: calc(180px * var(--s) + var(--sat, 0px));
   left: 0;
   width: 100%;
-  height: calc(160px * var(--s) + var(--sat, 0px));
+  height: calc(120px * var(--s));
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 calc(40px * var(--s));
-  padding-top: calc(40px * var(--s) + var(--sat, 0px));
 }
 .title {
   font-size: calc(52px * var(--s));
@@ -218,7 +243,7 @@ function onTab(key) {
 .okbar,
 .errbar {
   position: absolute;
-  top: calc(170px * var(--s) + var(--sat, 0px));
+  top: calc(310px * var(--s) + var(--sat, 0px));
   left: calc(32px * var(--s));
   right: calc(32px * var(--s));
   z-index: 5;
@@ -237,7 +262,7 @@ function onTab(key) {
 }
 .list {
   position: absolute;
-  top: calc(240px * var(--s) + var(--sat, 0px));
+  top: calc(320px * var(--s) + var(--sat, 0px));
   left: 0;
   width: 100%;
   bottom: calc(250px * var(--s) + var(--sab, 0px));
@@ -280,20 +305,39 @@ function onTab(key) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.av-grid {
+.av-up {
   display: flex;
-  flex-wrap: wrap;
-  gap: calc(16px * var(--s));
-}
-.av-item {
-  width: calc(96px * var(--s));
-  height: calc(96px * var(--s));
-  border-radius: calc(20px * var(--s));
-  border: calc(4px * var(--s)) solid transparent;
+  align-items: center;
+  gap: calc(24px * var(--s));
   cursor: pointer;
 }
-.av-item.on {
-  border-color: #08c0a0;
+.av-box {
+  width: calc(120px * var(--s));
+  height: calc(120px * var(--s));
+  border-radius: calc(24px * var(--s));
+  background: #f0f2f1;
+  border: calc(3px * var(--s)) dashed #cfd6d2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: none;
+}
+.av-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.av-plus {
+  font-size: calc(56px * var(--s));
+  color: #b0bab4;
+}
+.av-hint {
+  font-size: calc(30px * var(--s));
+  color: #8a9a93;
+}
+.av-file {
+  display: none;
 }
 .mid {
   flex: 1;
