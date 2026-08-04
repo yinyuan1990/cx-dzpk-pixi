@@ -127,6 +127,38 @@ export async function uploadImageFlow(blob, type = 'avatar', fileName = 'a.jpg')
   return prep.accessUrl
 }
 
+/** 修改资料(昵称/头像,需已登录;成功同步本地 login 缓存)。返回最新 profile */
+export async function updateProfileFlow({ username, avatar }) {
+  const token = localStorage.getItem('dzpk.token')
+  if (!token) throw new Error('请先登录')
+  const res = await fetch(resolveHttpBase() + '/api/auth/update-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ username, avatar }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.code !== 0) throw new Error(data.msg || '修改失败')
+  if (_login) {
+    _login.nickname = data.nickname
+    _login.avatar = data.avatar || ''
+  }
+  return data
+}
+
+/** 修改登录密码(需已登录;改后当前 token 仍有效,下次登录用新密码) */
+export async function changePasswordFlow({ oldPassword, newPassword, confirmPassword }) {
+  const token = localStorage.getItem('dzpk.token')
+  if (!token) throw new Error('请先登录')
+  const res = await fetch(resolveHttpBase() + '/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.code !== 0) throw new Error(data.msg || '修改失败')
+  return data
+}
+
 /** 注册(字段对标扯旋 RegisterRequest;成功即自动登录) */
 export async function accountRegisterFlow({ phone, password, confirmPassword, username, avatar }) {
   const auth = await authRequest('/api/auth/register', {
