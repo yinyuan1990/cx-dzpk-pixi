@@ -103,6 +103,22 @@ export async function accountLoginFlow({ phone, password }) {
   return { ...login, token: auth.token }
 }
 
+/**
+ * 图片上传:压缩后的 Blob 直传 MinIO(后端只发预签名,不过图片流量)。
+ * 返回可直接访问的 accessUrl(存注册 avatar 等业务字段)。
+ */
+export async function uploadImageFlow(blob, type = 'avatar', fileName = 'a.jpg') {
+  const prep = await fetch(resolveHttpBase() + '/api/upload/prepare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, fileName, fileSize: blob.size }),
+  }).then((r) => r.json())
+  if (prep.code !== 0) throw new Error(prep.msg || '上传服务异常')
+  const put = await fetch(prep.presignedUrl, { method: 'PUT', body: blob })
+  if (!put.ok) throw new Error('头像上传失败,请重试')
+  return prep.accessUrl
+}
+
 /** 注册(字段对标扯旋 RegisterRequest;成功即自动登录) */
 export async function accountRegisterFlow({ phone, password, confirmPassword, username, avatar }) {
   const auth = await authRequest('/api/auth/register', {

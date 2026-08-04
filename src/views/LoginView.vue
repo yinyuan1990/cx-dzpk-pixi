@@ -1,12 +1,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { accountLoginFlow, accountRegisterFlow, loginFlow } from '../net/session.js'
+import { accountLoginFlow, accountRegisterFlow, loginFlow, uploadImageFlow } from '../net/session.js'
 import { useGameStore } from '../stores/game.js'
-import { DEFAULT_AVATARS } from '../config/defaultAvatars'
+import { compressAvatar } from '../utils/imageCompress.js'
 
 // 独立账号登录/注册(dz_user 本地库,注册字段对标扯旋:
 //   phone/username/avatar/password/confirmPassword/registerDevice)。
+// 头像 = 本地选图 → canvas 压缩(256px/≤100KB) → 预签名直传 MinIO。
 // 游客登录已移除;开发模式(vite dev)保留一个游客直连入口方便联调。
 const router = useRouter()
 const game = useGameStore()
@@ -18,9 +19,27 @@ const phone = ref('')
 const password = ref('')
 const confirmPassword = ref('')
 const nickname = ref('')
-const avatar = ref(DEFAULT_AVATARS[0])
+const avatar = ref('')       // 上传成功后的 MinIO 直链
+const avatarBusy = ref(false)
+const fileInput = ref(null)
 const busy = ref(false)
 const errMsg = ref('')
+
+async function onPickAvatar(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = '' // 允许重选同一文件
+  if (!file || avatarBusy.value) return
+  avatarBusy.value = true
+  errMsg.value = ''
+  try {
+    const blob = await compressAvatar(file)
+    avatar.value = await uploadImageFlow(blob, 'avatar', 'avatar.jpg')
+  } catch (err) {
+    errMsg.value = err.message || '头像上传失败'
+  } finally {
+    avatarBusy.value = false
+  }
+}
 
 onMounted(async () => {
   phone.value = localStorage.getItem('dzpk.phone') || ''
@@ -58,6 +77,7 @@ async function onSubmit() {
   if (mode.value === 'register') {
     if (!nickname.value.trim()) { errMsg.value = '请输入昵称'; return }
     if (password.value !== confirmPassword.value) { errMsg.value = '两次密码输入不一致'; return }
+    if (!avatar.value) { errMsg.value = '请选择头像'; return }
   }
   busy.value = true
   try {
@@ -119,9 +139,13 @@ async function onGuestLogin() {
         <div class="input-row">
           <input v-model="nickname" class="edit nopad" placeholder="昵称(最长4个汉字,不能纯数字)" maxlength="8" @keyup.enter="onSubmit" />
         </div>
-        <div class="avatar-pick">
-          <img v-for="a in DEFAULT_AVATARS" :key="a" :src="a" class="avatar-item"
-            :class="{ on: avatar === a }" @click="avatar = a" />
+        <div class="avatar-pick" @click="fileInput && fileInput.click()">
+          <div class="av-preview">
+            <img v-if="avatar" :src="avatar" alt="" />
+            <span v-else class="av-plus">+</span>
+          </div>
+          <span class="av-tip">{{ avatarBusy ? '上传中…' : avatar ? '点击更换头像' : '选择头像(必选,自动压缩)' }}</span>
+          <input ref="fileInput" type="file" accept="image/*" class="av-file" @change="onPickAvatar" />
         </div>
       </template>
 
@@ -247,19 +271,37 @@ async function onGuestLogin() {
 .avatar-pick {
   width: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: calc(14px * var(--s));
-  justify-content: center;
-}
-.avatar-item {
-  width: calc(88px * var(--s));
-  height: calc(88px * var(--s));
-  border-radius: 50%;
-  border: calc(4px * var(--s)) solid transparent;
+  align-items: center;
+  gap: calc(24px * var(--s));
   cursor: pointer;
 }
-.avatar-item.on {
-  border-color: #08c0a0;
+.av-preview {
+  flex: none;
+  width: calc(120px * var(--s));
+  height: calc(120px * var(--s));
+  border-radius: 50%;
+  background: #f0f2f1;
+  border: calc(3px * var(--s)) dashed #cfd6d2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.av-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.av-plus {
+  font-size: calc(56px * var(--s));
+  color: #b0bab4;
+}
+.av-tip {
+  font-size: calc(30px * var(--s));
+  color: #8a9a93;
+}
+.av-file {
+  display: none;
 }
 
 .dev-guest {
