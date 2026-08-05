@@ -2551,15 +2551,14 @@ if (import.meta.env.DEV) {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
-/* 汇总条(对齐扯旋 topGroup):深色横带,标签浅灰 + 数字白色大字(牌桌字体) */
+/* 汇总条(对齐扯旋 topGroup):扯旋原背景图 zhanji_title_bg3(631×77 深青网点纹理) */
 .stats-total {
   display: flex;
   align-items: center;
   justify-content: space-evenly;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: calc(10px * var(--s));
-  padding: calc(16px * var(--s)) 0;
-  margin-bottom: calc(12px * var(--s));
+  height: calc(77px * var(--s));
+  background: url(/assets/table/zhanji_title_bg3.png) center / 100% 100% no-repeat;
+  margin-bottom: calc(8px * var(--s));
   font-size: calc(26px * var(--s));
   color: #9fb5ab;
 }
@@ -2701,7 +2700,9 @@ if (import.meta.env.DEV) {
 }
 .stats-head {
   color: #9fb0c0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  /* 表头背景 = 扯旋原图 zhanji_title_bg2(629×70 深青横带) */
+  height: calc(70px * var(--s));
+  background: url(/assets/table/zhanji_title_bg2.png) center / 100% 100% no-repeat;
 }
 .stats-row {
   color: #dfe9e4;
