@@ -1361,29 +1361,41 @@ async function onSeatReserveResume() {
   try { await seatReserveResume(tgt.roomId) } catch (e) { errMsg.value = e.message || '回座失败' }
 }
 
-// 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏 + 各自周期结算倒计时
-//   (循环玩法:周期按每个玩家自己的累计游戏时间独立计,后端下发 remainingSecs)
+// 实时战绩(对齐扯旋 CHEXUANPlayerList,左侧侧滑):
+//   顶部总带入/总积分 → 玩家列表(头像/昵称/ID/手数/周期倒计时/带入/输赢) →
+//   围观人员网格 → 底部对局时长(走秒)。周期按每个玩家自己的累计游戏时间独立计。
 let statsTick = null
+const gameDuration = ref('')
 async function onOpenStats() {
   showMenu.value = false
   const tgt = game.enterTarget
   if (!tgt) return
-  statsPanel.value = { show: true, loading: true, players: [], settleTimeMins: 0 }
+  statsPanel.value = { show: true, loading: true, players: [], viewers: [], settleTimeMins: 0, totalBringIn: 0, totalStack: 0, createdAtMs: 0 }
   try {
     const d = await realtimeStatsFlow(tgt.roomId)
     statsPanel.value = {
       show: true, loading: false,
       players: (d.players || []).sort((a, b) => b.profit - a.profit),
+      viewers: d.viewers || [],
       settleTimeMins: (d.room && d.room.settleTimeMins) || 0,
+      totalBringIn: (d.room && d.room.totalBringIn) || 0,
+      totalStack: (d.room && d.room.totalStack) || 0,
+      createdAtMs: (d.room && d.room.createdAtMs) || 0,
     }
-    // 面板打开期间倒计时本地每秒递减(打牌中的玩家在走表;等待/暂离的由下次拉取校正)
+    // 面板打开期间:各玩家周期倒计时本地递减 + 底部对局时长走秒
     clearInterval(statsTick)
-    statsTick = setInterval(() => {
+    const tick = () => {
       if (!statsPanel.value.show) { clearInterval(statsTick); return }
       for (const p of statsPanel.value.players) {
         if (p.remainingSecs > 0 && !p.awaitingBuyin && !p.sittingOut) p.remainingSecs--
       }
-    }, 1000)
+      const ms = statsPanel.value.createdAtMs ? Date.now() - statsPanel.value.createdAtMs : 0
+      const ts = Math.max(0, Math.floor(ms / 1000))
+      const p2 = (n) => String(n).padStart(2, '0')
+      gameDuration.value = `${p2(Math.floor(ts / 3600))}:${p2(Math.floor((ts % 3600) / 60))}:${p2(ts % 60)}`
+    }
+    tick()
+    statsTick = setInterval(tick, 1000)
   } catch (e) {
     statsPanel.value.show = false
     errMsg.value = e.message || '获取战绩失败'
@@ -1693,29 +1705,53 @@ if (import.meta.env.DEV) {
         </div>
       </div>
 
-      <!-- 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏排行 + 各自周期结算倒计时 -->
-      <div v-if="statsPanel.show" class="stats-mask" @click.self="statsPanel.show = false">
-        <div class="stats-box">
-          <div class="stats-title">实时战绩<span v-if="statsPanel.settleTimeMins" class="stats-sub">{{ statsPanel.settleTimeMins }}分钟/周期 · 每人独立计时</span></div>
+      <!-- 实时战绩(对齐扯旋 CHEXUANPlayerList):左侧侧滑面板 -->
+      <div v-if="statsPanel.show" class="stats-mask side" @click.self="statsPanel.show = false">
+        <div class="stats-side">
+          <div class="stats-title">实时战绩</div>
+          <div class="stats-total">
+            <span>总带入 <b>{{ formatKNotation(statsPanel.totalBringIn) }}</b></span>
+            <span>总积分 <b>{{ formatKNotation(statsPanel.totalStack) }}</b></span>
+          </div>
           <div v-if="statsPanel.loading" class="stats-loading">加载中…</div>
           <template v-else>
             <div class="stats-head">
-              <span class="c-name">玩家</span><span class="c-num">带入</span><span class="c-num">当前</span><span class="c-num">盈亏</span><span v-if="statsPanel.settleTimeMins" class="c-num">周期剩余</span>
+              <span class="c-player">玩家</span><span class="c-sm">手数</span><span class="c-sm">时间</span><span class="c-md">带入</span><span class="c-md">输赢</span>
             </div>
-            <div v-for="p in statsPanel.players" :key="p.userId" class="stats-row">
-              <span class="c-name">{{ p.nickname }}{{ p.userId === game.user.userId ? '(我)' : '' }}</span>
-              <span class="c-num">{{ formatKNotation(p.bringIn) }}</span>
-              <span class="c-num">{{ formatKNotation(p.stack) }}</span>
-              <span class="c-num" :class="{ win: p.profit > 0, lose: p.profit < 0 }">
-                {{ p.profit > 0 ? '+' : '' }}{{ formatKNotation(p.profit) }}
-              </span>
-              <span v-if="statsPanel.settleTimeMins" class="c-num countdown" :class="{ soon: p.remainingSecs != null && p.remainingSecs < 300 }">
-                {{ p.awaitingBuyin ? '待补入' : fmtRemain(p.remainingSecs) }}
-              </span>
+            <div class="stats-scroll">
+              <div v-for="p in statsPanel.players" :key="p.userId" class="stats-row">
+                <span class="c-player">
+                  <img v-if="p.avatar" :src="p.avatar" class="sp-av" />
+                  <span v-else class="sp-av sp-av-txt">{{ (p.nickname || '?')[0] }}</span>
+                  <span class="sp-nick">
+                    <i class="sp-name">{{ p.nickname }}{{ p.userId === game.user.userId ? '(我)' : '' }}</i>
+                    <i class="sp-id">ID:{{ p.numberId || p.userId }}</i>
+                  </span>
+                </span>
+                <span class="c-sm">{{ p.handCount || 0 }}</span>
+                <span class="c-sm countdown" :class="{ soon: p.remainingSecs != null && p.remainingSecs < 300 }">
+                  {{ p.awaitingBuyin ? '待补' : fmtRemain(p.remainingSecs) }}
+                </span>
+                <span class="c-md">{{ formatKNotation(p.bringIn) }}</span>
+                <span class="c-md" :class="{ win: p.profit > 0, lose: p.profit < 0 }">
+                  {{ p.profit > 0 ? '+' : '' }}{{ formatKNotation(p.profit) }}
+                </span>
+              </div>
+              <div v-if="!statsPanel.players.length" class="stats-loading">暂无在座玩家</div>
+
+              <!-- 围观人员(对齐扯旋 viewers 网格) -->
+              <div class="viewers-title">围观人员 ({{ statsPanel.viewers.length }})</div>
+              <div v-if="statsPanel.viewers.length" class="viewers-grid">
+                <div v-for="v in statsPanel.viewers" :key="v.userId" class="viewer">
+                  <img v-if="v.avatar" :src="v.avatar" class="vw-av" />
+                  <span v-else class="vw-av vw-av-txt">{{ (v.nickname || '?')[0] }}</span>
+                  <span class="vw-nick">{{ v.nickname }}</span>
+                </div>
+              </div>
+              <div v-else class="stats-loading small">暂无围观</div>
             </div>
-            <div v-if="!statsPanel.players.length" class="stats-loading">暂无在座玩家</div>
+            <div class="stats-duration">对局时长 {{ gameDuration }}</div>
           </template>
-          <button class="stats-close" @click="statsPanel.show = false">关闭</button>
         </div>
       </div>
 
@@ -2469,19 +2505,152 @@ if (import.meta.env.DEV) {
   text-align: center;
   margin-bottom: calc(24px * var(--s));
 }
-.stats-sub {
-  display: block;
-  font-size: calc(24px * var(--s));
-  font-weight: 400;
-  color: #9fb0c0;
-  margin-top: calc(6px * var(--s));
-}
 .countdown {
   color: #5ce0c0;
   font-family: monospace;
 }
 .countdown.soon {
   color: #ffb14d;
+}
+
+/* 实时战绩左侧侧滑(对齐扯旋 CHEXUANPlayerList) */
+.stats-mask.side {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+.stats-side {
+  width: calc(760px * var(--s));
+  max-width: 82%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 32, 24, 0.96);
+  border-right: 1px solid rgba(92, 224, 192, 0.25);
+  padding: calc(30px * var(--s) + var(--sat, 0px)) calc(20px * var(--s)) calc(20px * var(--s) + var(--sab, 0px));
+  animation: statsSlideIn 0.25s ease-out;
+}
+@keyframes statsSlideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.stats-total {
+  display: flex;
+  justify-content: space-around;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: calc(12px * var(--s));
+  padding: calc(14px * var(--s)) 0;
+  margin-bottom: calc(10px * var(--s));
+  font-size: calc(28px * var(--s));
+  color: #cfe0d6;
+}
+.stats-total b {
+  color: #ffd76a;
+  margin-left: calc(8px * var(--s));
+}
+.stats-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.c-player {
+  flex: 1.9;
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--s));
+  min-width: 0;
+}
+.c-sm {
+  flex: 0.7;
+  text-align: center;
+}
+.c-md {
+  flex: 1;
+  text-align: right;
+}
+.sp-av {
+  width: calc(64px * var(--s));
+  height: calc(64px * var(--s));
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+.sp-av-txt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c4a3a;
+  color: #9fe8d0;
+  font-size: calc(28px * var(--s));
+}
+.sp-nick {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sp-name {
+  font-style: normal;
+  font-size: calc(26px * var(--s));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-id {
+  font-style: normal;
+  font-size: calc(20px * var(--s));
+  color: #88a89c;
+}
+.viewers-title {
+  margin-top: calc(24px * var(--s));
+  padding-top: calc(16px * var(--s));
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cfe0d6;
+  font-size: calc(28px * var(--s));
+  font-weight: 600;
+}
+.viewers-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: calc(16px * var(--s)) calc(8px * var(--s));
+  margin-top: calc(14px * var(--s));
+}
+.viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--s));
+  min-width: 0;
+}
+.vw-av {
+  width: calc(84px * var(--s));
+  height: calc(84px * var(--s));
+  border-radius: calc(18px * var(--s));
+  object-fit: cover;
+}
+.vw-av-txt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c4a3a;
+  color: #9fe8d0;
+  font-size: calc(32px * var(--s));
+}
+.vw-nick {
+  max-width: 100%;
+  font-size: calc(20px * var(--s));
+  color: #b8d0c6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-loading.small {
+  padding: calc(20px * var(--s)) 0;
+}
+.stats-duration {
+  text-align: center;
+  padding-top: calc(16px * var(--s));
+  color: #cfe0d6;
+  font-size: calc(28px * var(--s));
+  font-family: monospace;
 }
 .stats-loading {
   text-align: center;

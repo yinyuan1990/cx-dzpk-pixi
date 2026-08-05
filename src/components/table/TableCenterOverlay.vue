@@ -45,10 +45,10 @@ const fmt = (n) => formatKNotation(n)
     <div class="wpk-url">www.wpk.com</div>
   </div>
 
-  <!-- total pot ribbon ndTotalPot (raised to y=530 per 4.jpg) -->
+  <!-- total pot ribbon ndTotalPot (raised to y=530 per 4.jpg);"总底池"字样不动,只有数字弹缩 -->
   <div class="t-node ndTotalPot" :style="{ '--cx': toCx(0), '--cy': toCy(530) }">
-    <span class="pot-text" :class="{ pop: potPop }">
-      {{ t('table.totalPot') }}<template v-if="pot > 0"> {{ fmt(potDisplay) }}</template>
+    <span class="pot-text">
+      {{ t('table.totalPot') }}<b v-if="pot > 0" class="pot-num" :class="{ pop: potPop }"> {{ fmt(potDisplay) }}</b>
     </span>
   </div>
 
@@ -108,9 +108,13 @@ const fmt = (n) => formatKNotation(n)
   color: #e8f1ea;
   letter-spacing: calc(2px * var(--s));
   white-space: nowrap;
+}
+.pot-num {
+  display: inline-block;
+  font-weight: 600;
   transition: transform 0.16s ease;
 }
-.pot-text.pop {
+.pot-num.pop {
   transform: scale(1.22);
   color: #ffd23b;
 }
