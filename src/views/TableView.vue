@@ -1452,19 +1452,23 @@ function onOpenHandTip() {
   showHandTip.value = true
 }
 
-// ===== 牌局回顾(右上角回顾按钮;老德州90简化版:每手静态快照,支持前后翻手) =====
+// ===== 牌局回顾(右上角回顾按钮;对齐扯旋 CHEXUANTableRecordPanel:右侧滑出,每页一手) =====
 const handReview = ref({ show: false, loading: false, data: null })
-async function onOpenHandReview(handNo = -1) {
+async function onOpenHandReview(handNo = -1, forceShow = false) {
   const tgt = game.enterTarget
   if (!tgt) return
-  handReview.value = { show: true, loading: true, data: handReview.value.data }
+  handReview.value = { show: true, loading: !handReview.value.data, data: handReview.value.data }
   try {
-    const d = await handReviewFlow(tgt.roomId, handNo)
+    const d = await handReviewFlow(tgt.roomId, handNo, forceShow)
     handReview.value = { show: true, loading: false, data: d }
   } catch (e) {
     handReview.value.show = false
     errMsg.value = e.message || '回顾加载失败'
   }
+}
+// 强制秀牌(对齐扯旋 forceShowCardCost):付费解锁本手全部玩家手牌
+function onForceShowCards(handNo) {
+  onOpenHandReview(handNo, true)
 }
 
 // ===== 看下一张牌(对齐老德州148:弃牌提前结束后付费翻未发公共牌,一人付费全桌可见) =====
@@ -1969,6 +1973,7 @@ if (import.meta.env.DEV) {
         :data="handReview.data"
         @close="handReview.show = false"
         @nav="onOpenHandReview"
+        @force-show="onForceShowCards"
       />
 
       <!-- 看下一张(对齐老德州148):弃牌提前结束的结算窗口出现,一人付费全桌可见 -->

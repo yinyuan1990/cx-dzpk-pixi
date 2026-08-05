@@ -703,10 +703,11 @@ export async function showCardsFlow(roomId, mode) {
   sock.send(MSG.SHOW_CARDS, { mode }, roomId)
 }
 
-/** 牌型回顾(简化版):handNo<=0=最近一手。返回 {handNo,minHandNo,maxHandNo,board,players} */
-export async function handReviewFlow(roomId, handNo = -1) {
+/** 牌型回顾:handNo<=0=最近一手;forceShow=付费强制秀牌(解锁本手全部手牌,对齐扯旋) */
+export async function handReviewFlow(roomId, handNo = -1, forceShow = false) {
   const sock = await ensureSocket()
-  const res = await sock.request(MSG.HAND_REVIEW, { handNo }, { roomId, resType: MSG.HAND_REVIEW_RES })
+  const res = await sock.request(MSG.HAND_REVIEW, { handNo, forceShow: forceShow ? 1 : 0 },
+    { roomId, resType: MSG.HAND_REVIEW_RES })
   return res.data
 }
 
