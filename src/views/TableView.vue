@@ -151,6 +151,21 @@ const spectating = ref(false)
 let _didAutoRotate = false // 观战进房只自动旋转一次（重连重同步不再转）
 const specInfo = ref('') // 观战状态条（调试可见）：房号/在座/状态/错误
 const eventLog = ref([]) // 观战事件实时日志（最近若干条，调试用）
+// 调试面板:默认全部隐藏,点桌面右上角虫子图标才展开(状态条+事件日志+房间参数核实)
+const showDebug = ref(false)
+const roomRules = ref(null) // 快照 rules(建房全量参数,核实参数是否生效)
+const RULE_LABELS = [
+  ['sb', '小盲'], ['bb', '大盲'], ['maxPlayers', '人数'], ['settleTimeMins', '时长(分)'],
+  ['opTimeSec', '思考时间(秒)'], ['ante', '前注'], ['rakePercent', '费率%'],
+  ['minBuyin', '最小带入'], ['maxBuyin', '最大带入'],
+  ['straddleOn', 'Straddle'], ['insuranceOn', '保险'], ['muckOn', '埋牌'], ['vpOn', '入池率'],
+  ['ipLimitOn', 'IP限制'], ['gpsLimitOn', 'GPS限制'],
+  ['autoStartNum', '自动开局人数'], ['gameMinTime', '最短上桌(分)'], ['aheadLeaveOn', '允许提前离桌'],
+]
+function ruleVal(v) {
+  if (typeof v === 'boolean') return v ? '开' : '关'
+  return v
+}
 function logEvent(type, data) {
   let brief = ''
   if (type === 'recvStartInfor') brief = `手#${data.handNo} 庄${data.bankerID} 小盲位${data.smallSeatID} 大盲位${data.bigSeatID} 盲${data.smallChip}/${data.bigChip}`
@@ -197,6 +212,7 @@ function driveFromModel(m, { animateBoard = false, isSnapshot = false } = {}) {
   const gs = { 0: '倒计时', 1: '游戏中', '-2': '等待开局', '-1': '其他' }[m.gamestatus] ?? m.gamestatus
   const boardDbg = (m.board || []).length ? ` · 公共牌 ${(m.board || []).map(debugServerCard).join(' ')}` : ''
   specInfo.value = `观战 房#${game.enterTarget?.roomId ?? ''} · 在座 ${occ}/${m.seatCount} · ${gs} · 盲 ${formatKNotation(m.smallBlind)}/${formatKNotation(m.bigBlind)} · 底池 ${formatKNotation(m.pot)}${boardDbg}`
+  if (m.rules) roomRules.value = m.rules // 建房参数(调试面板核实)
   const board = mapBoard(m.board)
   boardActive.value = board.length > 0
   // 驱动 Pixi 层（带变更追踪，避免重复动画）
@@ -1531,12 +1547,28 @@ if (import.meta.env.DEV) {
       </div>
     </div>
 
-    <!-- 观战状态条（调试可见：是否在观战/房号/在座/状态）-->
-    <div v-if="specInfo" class="spec-info">{{ specInfo }}</div>
+    <!-- 调试入口:右上角虫子图标,点开才显示调试信息(默认全部隐藏,不挡牌桌) -->
+    <button class="dbg-btn" :class="{ on: showDebug }" @click="showDebug = !showDebug" aria-label="调试">🐛</button>
+    <div v-if="showDebug" class="dbg-panel" @click.self="showDebug = false">
+      <div class="dbg-box">
+        <div class="dbg-title">调试信息 <span class="dbg-close" @click="showDebug = false">✕</span></div>
+        <div v-if="specInfo" class="dbg-status">{{ specInfo }}</div>
 
-    <!-- 观战事件实时日志（调试可见：每来一条推送追加一行）-->
-    <div v-if="eventLog.length" class="spec-log">
-      <div v-for="(line, i) in eventLog" :key="i" class="spec-log-line">{{ line }}</div>
+        <template v-if="roomRules">
+          <div class="dbg-sec">房间参数(建房时设置,服务端实际生效值)</div>
+          <div class="dbg-rules">
+            <span v-for="[k, label] in RULE_LABELS" :key="k" class="dbg-rule">
+              {{ label }}<b>{{ ruleVal(roomRules[k]) }}</b>
+            </span>
+          </div>
+        </template>
+
+        <div class="dbg-sec">事件流(最近)</div>
+        <div class="dbg-log">
+          <div v-for="(line, i) in eventLog" :key="i" class="dbg-log-line">{{ line }}</div>
+          <div v-if="!eventLog.length" class="dbg-log-line">暂无事件</div>
+        </div>
+      </div>
     </div>
 
     <!-- (3) HUD: centered design box; nodes placed by real scene coords -->
@@ -1867,35 +1899,91 @@ if (import.meta.env.DEV) {
 .content > * {
   pointer-events: auto;
 }
-.spec-info {
+/* 调试:虫子图标(右上角,半透明不挡视线) + 点开的面板 */
+.dbg-btn {
   position: absolute;
-  top: calc(8px * var(--s) + var(--sat, 0px));
+  top: calc(96px * var(--s) + var(--sat, 0px));
+  right: calc(12px * var(--s));
+  z-index: 70;
+  width: calc(64px * var(--s));
+  height: calc(64px * var(--s));
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: calc(34px * var(--s));
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+}
+.dbg-btn.on {
+  opacity: 1;
+  background: rgba(8, 192, 160, 0.35);
+}
+.dbg-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 69;
+  background: rgba(0, 0, 0, 0.45);
+}
+.dbg-box {
+  position: absolute;
+  top: calc(170px * var(--s) + var(--sat, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 60;
-  padding: calc(8px * var(--s)) calc(20px * var(--s));
-  border-radius: calc(12px * var(--s));
-  background: rgba(0, 0, 0, 0.55);
-  color: #5ce0c0;
-  font-size: calc(26px * var(--s));
-  white-space: nowrap;
+  width: calc(920px * var(--s));
+  max-height: 62%;
+  overflow-y: auto;
+  padding: calc(24px * var(--s)) calc(28px * var(--s));
+  border-radius: calc(20px * var(--s));
+  background: rgba(10, 24, 18, 0.95);
+  border: 1px solid rgba(92, 224, 192, 0.3);
 }
-.spec-log {
-  position: absolute;
-  top: calc(60px * var(--s) + var(--sat, 0px));
-  left: calc(8px * var(--s));
-  z-index: 60;
-  max-width: 70%;
-  padding: calc(8px * var(--s)) calc(12px * var(--s));
+.dbg-title {
+  display: flex;
+  justify-content: space-between;
+  color: #5ce0c0;
+  font-size: calc(32px * var(--s));
+  font-weight: 600;
+  margin-bottom: calc(14px * var(--s));
+}
+.dbg-close {
+  cursor: pointer;
+  color: #88a89c;
+}
+.dbg-status {
+  color: #5ce0c0;
+  font-size: calc(24px * var(--s));
+  margin-bottom: calc(12px * var(--s));
+  word-break: break-all;
+}
+.dbg-sec {
+  color: #88a89c;
+  font-size: calc(24px * var(--s));
+  margin: calc(14px * var(--s)) 0 calc(8px * var(--s));
+}
+.dbg-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8px * var(--s));
+}
+.dbg-rule {
+  background: rgba(92, 224, 192, 0.12);
   border-radius: calc(10px * var(--s));
-  background: rgba(0, 0, 0, 0.5);
-  color: #9fe8d0;
+  padding: calc(6px * var(--s)) calc(14px * var(--s));
+  color: #b8d8cc;
+  font-size: calc(22px * var(--s));
+}
+.dbg-rule b {
+  color: #ffd23b;
+  margin-left: calc(6px * var(--s));
+}
+.dbg-log {
   font-family: monospace;
   font-size: calc(20px * var(--s));
-  line-height: 1.5;
-  pointer-events: none;
+  line-height: 1.6;
+  color: #9fe8d0;
 }
-.spec-log-line {
+.dbg-log-line {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

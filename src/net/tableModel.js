@@ -152,6 +152,7 @@ export function mapSnapshot(snap) {
     handNo: snap.handNo ?? 0,
     creatorUserId: snap.creatorUserId ?? 0,
     clubId: snap.clubId ?? 0,
+    rules: snap.rules || null, // 建房全量参数(调试面板核实"参数是否生效"用)
   }
 }
 
