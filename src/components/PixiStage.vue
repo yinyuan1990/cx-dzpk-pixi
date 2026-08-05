@@ -102,6 +102,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   loadDragonBones,
+  setHandTip: (v) => table && table.setHandTip(v),
   playDeal: (targets, onReveal) => table && table.playDeal(targets, onReveal),
   clearDeal: () => table && table.clearDeal(),
   playFold: (nodeId) => table && table.playFold(nodeId),

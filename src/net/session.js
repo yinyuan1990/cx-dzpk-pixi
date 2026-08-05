@@ -18,6 +18,7 @@ export const MSG = {
   CLUB_REVIEW: 424, CLUB_MEMBERS: 425, CLUB_SET_ROLE: 426, CLUB_KICK: 427,
   CLUB_QUIT: 428, CLUB_DISSOLVE: 429,
   CLUB_SCORE_OP: 430, CLUB_SCORE_LOGS: 431, GPS_REPORT: 432, CLUB_UPDATE: 433,
+  NEXT_CARD: 434, SHOW_CARDS: 435, HAND_REVIEW: 436,
   LOGIN_RES: 451, ROOM_LIST_RES: 452, CREATE_ROOM_RES: 453, ENTER_ROOM_RES: 454,
   PLAYER_ENTER: 455, PLAYER_SIT: 456, BUY_IN_RES: 457, HAND_START: 458,
   HOLE_CARDS: 459, TURN: 460, ACTION_BC: 461, DEAL: 462, SHOWDOWN: 463,
@@ -30,6 +31,7 @@ export const MSG = {
   CLUB_REVIEW_RES: 484, CLUB_MEMBERS_RES: 485, CLUB_OP_RES: 486, CLUB_NOTIFY: 487,
   DIAMOND_WARNING: 488, CLUB_SCORE_LOGS_RES: 489,
   GIFT_LIST_RES: 490, ROOM_GIFT: 491, ROOM_OPTIONS_RES: 492, CLUB_UPDATE_RES: 493,
+  NEXT_CARD_BC: 494, SHOW_CARDS_BC: 495, HAND_REVIEW_RES: 496,
   ERROR: 499,
 }
 
@@ -516,6 +518,8 @@ export async function spectateFlow({ roomId, onSnapshot, onEvent, onStatus }) {
   on(MSG.DIAMOND_WARNING, (d) => emit('recvDiamondWarning', d)) // {clubId,needed,msg}
   // 房间礼物广播(对齐扯旋351):{fromUserId,fromSeat,toUserId?,toSeat?,giftKey,animKey,giftName,cost,costType,fromStack}
   on(MSG.ROOM_GIFT, (d) => emit('recvGift', d))
+  on(MSG.NEXT_CARD_BC, (d) => emit('recvNextCard', d))   // 看下一张 {byUserId,byNick,newCards,rabbitCards,boardSize,cost}
+  on(MSG.SHOW_CARDS_BC, (d) => emit('recvShowCards', d)) // 秀牌 {userId,seat,mode,cards:[{idx,card}]}
 
   // ---- 房态:WAITING(人不够) → 延时清台;FINISHED → 下一手 HAND_START 自会清 ----
   let waitingTimer = null
@@ -685,6 +689,25 @@ export async function giftListFlow() {
 export async function sendGiftFlow({ roomId, giftId, toUserId = 0 }) {
   const sock = await ensureSocket()
   sock.send(MSG.GIFT_SEND, { giftId, toUserId }, roomId)
+}
+
+/** 看下一张牌(对齐老德州148):结果走 recvNextCard 广播,失败走 ERROR */
+export async function nextCardFlow(roomId) {
+  const sock = await ensureSocket()
+  sock.send(MSG.NEXT_CARD, {}, roomId)
+}
+
+/** 秀牌(对齐老德州43):mode 1=第1张 2=第2张 3=两张;结果走 recvShowCards 广播 */
+export async function showCardsFlow(roomId, mode) {
+  const sock = await ensureSocket()
+  sock.send(MSG.SHOW_CARDS, { mode }, roomId)
+}
+
+/** 牌型回顾(简化版):handNo<=0=最近一手。返回 {handNo,minHandNo,maxHandNo,board,players} */
+export async function handReviewFlow(roomId, handNo = -1) {
+  const sock = await ensureSocket()
+  const res = await sock.request(MSG.HAND_REVIEW, { handNo }, { roomId, resType: MSG.HAND_REVIEW_RES })
+  return res.data
 }
 
 // ---------------------------------------------------------------

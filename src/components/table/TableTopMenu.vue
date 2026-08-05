@@ -1,7 +1,7 @@
 <script setup>
 // topMenu (1080x101, top-aligned). Left = openBtn (hamburger) -> opens the table menu.
-// Right = invite / shop / review. Safe-area aware (Cocos top = statusbar + 20).
-defineEmits(['open-menu'])
+// Right = review(牌局回顾,已接) / invite / shop(待接). Safe-area aware.
+defineEmits(['open-menu', 'review'])
 </script>
 
 <template>
@@ -10,9 +10,11 @@ defineEmits(['open-menu'])
       <img class="ic ic60" src="/assets/table/btn_open.png" alt="menu" />
     </button>
     <div class="tm-right">
+      <button class="tm-btn" data-sound="click" @click="$emit('review')">
+        <img class="ic ic60" src="/assets/table/btn_review.png" alt="回顾" />
+      </button>
       <button class="tm-btn"><img class="ic ic60" src="/assets/table/btn_invite.png" alt="" /></button>
       <button class="tm-btn"><img class="ic ic60" src="/assets/table/btn_shop.png" alt="" /></button>
-      <button class="tm-btn"><img class="ic ic60" src="/assets/table/btn_review.png" alt="" /></button>
     </div>
   </div>
 </template>

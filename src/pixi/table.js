@@ -524,6 +524,8 @@ export function createTable(app, { t, onPot } = {}) {
   const flying = [] // active deal-card tweens
   const folds = [] // active fold tweens (其它玩家小牌背飞向中心 logo + 淡出)
   let foldToken = 0
+  // 牌型提示开关(菜单可关):关=自己手牌下不显示「高牌/一对」牌型字
+  let handTipOn = true
   const giftFlights = [] // 送礼物飞行投射物 tween（送礼者→受赠者）
   const giftDisplays = [] // 活跃的 DragonBones 礼物 armatureDisplay
   let giftToken = 0
@@ -616,20 +618,40 @@ export function createTable(app, { t, onPot } = {}) {
     refreshTextRes(world)
   }
 
-  // 身家底板：圆角胶囊（圆角半径=高度一半，非矩形小圆角），对照参考图 29.2/41.71/34.95 的药丸底。
-  //   左右内边距各 26（原 16 + 用户要求再加 10），让数字离背景边缘更宽松。
-  function drawScorePlate(g, score) {
-    g.clear()
-    // 占座(18)等无身家文本时不画底板（对齐 Unity SetCoin(string.Empty)：coinShadow 随文本收起，
-    //   否则空胶囊会残留一个小黑点）。
-    if (!score.text) return
+  // 身家底板 = 扯旋原图 header_gold_bg(126×38 深绿胶囊+细灰描边);
+  //   九宫格拉伸(两端圆角不变形),替换原手绘白边胶囊(用户反馈"跟狗啃了一样")。
+  const SCORE_PLATE_SRC = '/assets/table/score_plate_bg.png'
+  function makeScorePlate() {
+    const nine = new PIXI.NineSlicePlane(PIXI.Texture.from(SCORE_PLATE_SRC), 19, 18, 19, 18)
+    nine.visible = false
+    return nine
+  }
+  function drawScorePlate(bg, score) {
+    // 占座(18)等无身家文本时不显示底板（对齐 Unity SetCoin(string.Empty)）。
+    if (!score.text) {
+      bg.visible = false
+      return
+    }
+    bg.visible = true
     const w = score.width + 52
     const h = score.height + 8
-    // 1px 白色边框（玩家身家底板描边，对照参考图）。lineStyle 在 beginFill 前设，描边走胶囊轮廓。
-    g.lineStyle(1, 0xffffff, 0.9)
-    g.beginFill(0x081610, 0.72)
-      .drawRoundedRect(-w / 2, -h / 2, w, h, h) // 圆角半径=高度（最大圆角，左右两端全半圆胶囊）
-      .endFill()
+    bg.width = w
+    bg.height = h
+    bg.position.set(-w / 2, -h / 2)
+  }
+
+  /** 牌型提示开关(菜单):关闭立即隐藏所有牌型字,打开按当前手牌状态恢复 */
+  function setHandTip(on) {
+    handTipOn = !!on
+    for (const [, view] of seatViews) {
+      if (!view.cardType || view.cardType._destroyed) continue
+      if (!handTipOn) {
+        view.cardType.visible = false
+      } else {
+        const cards = view.player && Array.isArray(view.player.cards) ? view.player.cards : []
+        view.cardType.visible = cards.length >= 2 && cards.every((k) => k && k.revealed)
+      }
+    }
   }
 
   // 昵称最多 5 个字，超过截断 + 省略号（对照参考图 深V蕾丝... / 阿姨说来...）。
@@ -679,7 +701,7 @@ export function createTable(app, { t, onPot } = {}) {
     // 身家数字字体 = Cocos money_text 真值 PKW-Chip-Regular（Seat.prefab _N$file）。占座(18)不显示数字。
     const score = makeText(scoreTextFor(p), { size: 30, fill: 0xffd23b, weight: '400', family: SCORE_FONT })
     const plate = new PIXI.Container()
-    const bg = new PIXI.Graphics()
+    const bg = makeScorePlate()
     drawScorePlate(bg, score)
     plate.addChild(bg, score)
     plate.y = scoreDy
@@ -715,7 +737,7 @@ export function createTable(app, { t, onPot } = {}) {
     if (p.isSelf && cards.length >= 2) {
       cardType = makeText(tr(handTypeKey(cards)), { size: 34, fill: 0xffe08a, weight: '600' })
       cardType.y = CARD_TYPE_DY
-      cardType.visible = cards.every((k) => k.revealed)
+      cardType.visible = handTipOn && cards.every((k) => k.revealed)
       c.addChild(cardType)
     }
 
@@ -959,7 +981,7 @@ export function createTable(app, { t, onPot } = {}) {
             } else {
               view.cardType.text = tr(handTypeKey(cards))
             }
-            view.cardType.visible = cards.every((k) => k.revealed)
+            view.cardType.visible = handTipOn && cards.every((k) => k.revealed)
           } else if (view.cardType) {
             view.cardType.visible = false
           }
@@ -1159,7 +1181,7 @@ export function createTable(app, { t, onPot } = {}) {
       })
       // 牌型文字：更新为成手牌名；转金仅顺子级以上（setWinnerCardsTypeColor），其余白。
       if (view.cardType) {
-        view.cardType.visible = true
+        view.cardType.visible = handTipOn
         if (pt.catLabel) view.cardType.text = pt.catLabel
         view.cardType.style.fill = pt.winner && pt.cat >= 4 ? 0xffd23b : 0xffffff // HAND_CAT.STRAIGHT
       }
@@ -2855,6 +2877,7 @@ export function createTable(app, { t, onPot } = {}) {
   return {
     layout,
     render,
+    setHandTip,
     playDeal,
     clearDeal,
     playFold,

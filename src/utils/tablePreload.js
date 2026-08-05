@@ -7,6 +7,7 @@ import { currentFaceSheetUrl, currentBackUrl } from '../pixi/cardAtlas.js'
 // 牌桌常用特效 sprite（与 pixi/table.js 常量一致；牌面/牌背走当前皮肤）。
 const EFFECT_URLS = [
   '/assets/table/avatar_frame.png',
+  '/assets/table/score_plate_bg.png',
   '/assets/table/ic_seat_empty_bg.png',
   '/assets/table/chip.png',
   '/assets/table/dealer_btn.png',

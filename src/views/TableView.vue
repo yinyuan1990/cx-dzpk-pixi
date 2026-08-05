@@ -7,6 +7,8 @@ import TableSeat from '../components/table/TableSeat.vue'
 import TableTopMenu from '../components/table/TableTopMenu.vue'
 import TableBottomMenu from '../components/table/TableBottomMenu.vue'
 import TableCenterOverlay from '../components/table/TableCenterOverlay.vue'
+import TableHandTipDialog from '../components/table/TableHandTipDialog.vue'
+import TableHandReviewDialog from '../components/table/TableHandReviewDialog.vue'
 import TableSettingDialog from '../components/table/TableSettingDialog.vue'
 import TableMenuPopup from '../components/table/TableMenuPopup.vue'
 import TableDealTestDialog from '../components/table/TableDealTestDialog.vue'
@@ -30,8 +32,8 @@ import { playSound } from '../utils/sound'
 import { useSeatRotation } from '../composables/useSeatRotation'
 import { useTableBackground } from '../composables/useTableBackground'
 import { useGameStore } from '../stores/game.js'
-import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy, seatReserveLeave, seatReserveResume, realtimeStatsFlow, dismissRoomFlow, giftListFlow, sendGiftFlow } from '../net/session.js'
-import { mapSnapshot, applyEvent, mapBoard, debugServerCard } from '../net/tableModel.js'
+import { spectateFlow, leaveRoom, sitDownSeat, standUpSeat, leaveRoomSeat, addChips, sendAction, insuranceBuy, seatReserveLeave, seatReserveResume, realtimeStatsFlow, dismissRoomFlow, giftListFlow, sendGiftFlow, nextCardFlow, showCardsFlow, handReviewFlow } from '../net/session.js'
+import { mapSnapshot, applyEvent, mapBoard, debugServerCard, cardStrToId, serverCardToClient } from '../net/tableModel.js'
 import { formatKNotation } from '../utils/format'
 import { CARD_VALUES } from '../config/cards'
 import { evaluateBest, pickWinners, CAT_I18N } from '../utils/pokerEval'
@@ -105,7 +107,7 @@ const heroSeatId = ref(-1) // 自己座位号（坐下/快照/推送同步；供
 // ===== 边缘功能状态(对齐扯旋):暂离/罚金确认/实时战绩/解散 =====
 const myGrace = ref({ active: false, deadline: 0, leftSecs: 0 }) // 自己的放假倒计时
 let graceTimer = null
-const fineConfirm = ref({ show: false, fine: 0, msg: '' })       // 盈利离桌罚金确认弹窗
+const fineConfirm = ref({ show: false, fine: 0, msg: '', action: 'standup' }) // 盈利离桌罚金确认(站起/退房共用)
 const statsPanel = ref({ show: false, loading: false, players: [] }) // 实时战绩面板
 // 真实送礼面板(对齐扯旋161/351):礼物列表来自后端配置,目标=其他在座玩家
 const giftPanel = ref({ show: false, loading: false, gifts: [], sel: null, targets: [], target: 0 })
@@ -213,7 +215,10 @@ function driveFromModel(m, { animateBoard = false, isSnapshot = false } = {}) {
   const boardDbg = (m.board || []).length ? ` · 公共牌 ${(m.board || []).map(debugServerCard).join(' ')}` : ''
   specInfo.value = `观战 房#${game.enterTarget?.roomId ?? ''} · 在座 ${occ}/${m.seatCount} · ${gs} · 盲 ${formatKNotation(m.smallBlind)}/${formatKNotation(m.bigBlind)} · 底池 ${formatKNotation(m.pot)}${boardDbg}`
   if (m.rules) roomRules.value = m.rules // 建房参数(调试面板核实)
-  const board = mapBoard(m.board)
+  // 快照带本房间语境余额(俱乐部积分/金币):进房即同步,首次开带入弹窗余额来源就正确
+  if (isSnapshot && m.myBalance != null) game.user.chips = m.myBalance
+  // rabbit 牌(看下一张翻出的)拼进公共牌,防结算期间其它事件重摆时被冲掉
+  const board = mapBoard(m.board).concat(_rabbitCards)
   boardActive.value = board.length > 0
   // 驱动 Pixi 层（带变更追踪，避免重复动画）
   const P = pixiStage.value
@@ -349,6 +354,9 @@ function handleGameEvent(type, data) {
         // 保险(河牌保险,两人全下跑马):不进模型,独立面板处理
         if (type === 'recvInsuranceOffer') { onInsuranceOffer(data); return }
         if (type === 'recvInsuranceResult') { onInsuranceResult(data); return }
+        // 看下一张(148)/秀牌(43):桌面即时表现,不进模型
+        if (type === 'recvNextCard') { onNextCardBc(data); return }
+        if (type === 'recvShowCards') { onShowCardsBc(data); return }
         // 带入生效:若是自己,同步账户余额(带入弹窗/补带入用)
         if (type === 'recvBuyin' && data.userID === game.user.userId && data.balance != null) {
           game.user.chips = data.balance
@@ -413,6 +421,10 @@ function handleGameEvent(type, data) {
             // clearAllins 必须清：All-In 光环是「常驻到 clearAllin」的座位子节点，上一手的光环/压暗罩
             //   不清会一直挂在头像上带进下一手（对齐 Unity recvStartInfor 各座 SeatStartToPlaying 灭火焰）。
             winTimer && clearTimeout(winTimer); winTimer = null
+            // 新一手:关结算窗口功能(看下一张/秀牌),清 rabbit 牌
+            rabbitBtn.value = { show: false, cost: 0 }
+            showCardsBtn.value = false
+            _rabbitCards = []
             // clearWins：上一手 WIN/YouWin/盈利数字若还在淡出（readyTime 可为 0，间隔极短），
             //   立刻收掉，避免叠进新一手画面（状态重叠）。
             P.clearFolds(); P.clearBets(); P.clearShowdown(); P.clearCommunity(); P.clearAllins(); P.clearWins()
@@ -510,6 +522,16 @@ function handleGameEvent(type, data) {
             const winDelay = 450
             winTimer && clearTimeout(winTimer)
             winTimer = setTimeout(fireWin, winDelay)
+            // 结算窗口功能开关(下一手 recvStartInfor 关):
+            //   看下一张(弃牌提前结束且公共牌未满,对齐老德州148) + 秀牌(自己参与本手,对齐老德州43)
+            rabbitBtn.value = {
+              show: data.reason === 'fold' && board.length < 5,
+              cost: Math.max(Math.floor((m.bigBlind || 0) / 50), 1),
+            }
+            // 秀牌:自己参与本手且牌没亮(弃牌局全员没亮 / 摊牌局自己弃了)才有意义
+            const meSeat = m.mySeatID >= 0 ? m.seats[m.mySeatID] : null
+            showCardsBtn.value = !!(meSeat && Array.isArray(meSeat.holeCards) && meSeat.holeCards.length === 2
+              && (data.reason === 'fold' || meSeat.folded))
           }
         }
         } catch (e) { console.error('[spectate] 事件后置动画异常', type, e) }
@@ -670,6 +692,10 @@ async function confirmBuyIn() {
     // 带入成功先本地刷筹码 + 状态 18(占座)→8(已带入等下一手)（对齐 Unity HANDLER_REQ_GAME_ADD_CHIPS：
     //   Player.chips=rec.Chips；status==18→8；GameCache.gold=rec.allChips）。「等待」字保留到下一手自己真正入局。
     if (resp.allChips != null) game.user.chips = resp.allChips // 账户余额（再次带入弹窗用）
+    // 牌局中追加 = 挂起补带入(对齐扯旋:下单即扣积分,本局结束自动到桌面)
+    if (resp.applied === false) {
+      errMsg.value = `已受理,本局结束后自动带入 ${formatKNotation(buyInAmount.value)}`
+    }
     if (resp.status === 0 && tableModel && b.seatID >= 0) {
       const m = { ...tableModel, seats: tableModel.seats.map((s) => ({ ...s })) }
       const me = m.seats[b.seatID]
@@ -1344,8 +1370,10 @@ async function onStandUpSpectate(confirmFine = false) {
   }
 }
 function onFineConfirm() {
+  const act = fineConfirm.value.action
   fineConfirm.value.show = false
-  onStandUpSpectate(true)
+  if (act === 'leave') onLeaveRoom(true)
+  else onStandUpSpectate(true)
 }
 
 // 留座暂离(放假):牌局中未弃牌先 PENDING,弃牌/局末生效;结果走 recvGrace 事件
@@ -1417,6 +1445,75 @@ function onBottomMenu(key) {
   if (key === 'score') onOpenStats()
 }
 
+// 牌型提示(菜单):德州比牌规则说明弹窗(十个档位从大到小,每档配示例牌)
+const showHandTip = ref(false)
+function onOpenHandTip() {
+  showMenu.value = false
+  showHandTip.value = true
+}
+
+// ===== 牌局回顾(右上角回顾按钮;老德州90简化版:每手静态快照,支持前后翻手) =====
+const handReview = ref({ show: false, loading: false, data: null })
+async function onOpenHandReview(handNo = -1) {
+  const tgt = game.enterTarget
+  if (!tgt) return
+  handReview.value = { show: true, loading: true, data: handReview.value.data }
+  try {
+    const d = await handReviewFlow(tgt.roomId, handNo)
+    handReview.value = { show: true, loading: false, data: d }
+  } catch (e) {
+    handReview.value.show = false
+    errMsg.value = e.message || '回顾加载失败'
+  }
+}
+
+// ===== 看下一张牌(对齐老德州148:弃牌提前结束后付费翻未发公共牌,一人付费全桌可见) =====
+const rabbitBtn = ref({ show: false, cost: 0 })
+let _rabbitCards = [] // 本手已翻出的"下一张"(客户端牌值);driveFromModel 重摆公共牌时拼上,防被冲掉
+async function onNextCard() {
+  const tgt = game.enterTarget
+  if (!tgt) return
+  try { await nextCardFlow(tgt.roomId) } catch (e) { errMsg.value = e.message || '查看失败' }
+}
+function onNextCardBc(d) {
+  _rabbitCards = (d.rabbitCards || []).map(cardStrToId).map(serverCardToClient).filter((v) => v != null)
+  const board = mapBoard(tableModel ? tableModel.board : []).concat(_rabbitCards)
+  const P = pixiStage.value
+  if (P && board.length) {
+    const round = board.length === 3 ? 'FLOP' : board.length === 4 ? 'TURN' : board.length === 5 ? 'RIVER' : 'STATIC'
+    P.playCommunity(round, board)
+    boardActive.value = true
+  }
+  if (board.length >= 5) rabbitBtn.value.show = false
+  const who = d.byUserId === game.user.userId ? '你' : (d.byNick || '玩家')
+  errMsg.value = `${who} 查看了下一张`
+}
+
+// ===== 秀牌(对齐老德州43:结算后自愿亮自己的手牌,免费;1=左 2=右 3=两张) =====
+const showCardsBtn = ref(false)
+async function onShowCards(mode) {
+  const tgt = game.enterTarget
+  if (!tgt) return
+  showCardsBtn.value = false
+  try { await showCardsFlow(tgt.roomId, mode) } catch (e) { errMsg.value = e.message || '秀牌失败' }
+}
+function onShowCardsBc(d) {
+  if (d.userId === game.user.userId) return // 自己的牌本来就亮着
+  const values = (d.cards || []).map((c) => serverCardToClient(cardStrToId(c.card))).filter((v) => v != null)
+  if (!values.length) return
+  // 找该玩家座位(模型 seat 即 nodeId)
+  const P = pixiStage.value
+  if (P) P.playShowdown([{ nodeId: d.seat, hole: values, best5: [], cat: 0, catLabel: '', winner: false }])
+  const s = tableModel && tableModel.seats ? tableModel.seats[d.seat] : null
+  errMsg.value = `${(s && s.nick) || '玩家'} 秀牌`
+}
+
+// 补充积分(菜单):已坐下时打开带入弹窗追加带入(上限=最大带入-已带)
+function onMenuAddChips() {
+  showMenu.value = false
+  if (heroSeatId.value >= 0) openBuyIn(heroSeatId.value)
+}
+
 // 送礼(对齐扯旋161):列表来自后端 dz_gift_config,目标=其他在座玩家
 async function onOpenGift() {
   showMenu.value = false
@@ -1462,21 +1559,36 @@ async function onDismissRoom() {
   try { await dismissRoomFlow(tgt.roomId) } catch (e) { errMsg.value = e.message || '解散失败' }
 }
 // 离开房间：已入座先发 action=3，再断 room 长连接回大厅。
-async function onLeaveRoom() {
+async function onLeaveRoom(confirmFine = false) {
   showMenu.value = false
+  const tgt = game.enterTarget
+  if (spectating.value && tgt && heroSeatId.value >= 0) {
+    // 对齐扯旋104:牌局进行中且未弃牌不能退出房间(后端同样拦截,这里前置提示)
+    const me = tableModel && tableModel.seats ? tableModel.seats[heroSeatId.value] : null
+    if (tableModel && tableModel.gamestatus === 1 && me && me.canPlay && !me.folded) {
+      errMsg.value = '游戏进行中,请先弃牌再离开'
+      return
+    }
+    // 在座退出 = 先站起结算(含盈利离桌罚金 92 确认)再退房,对齐扯旋 leave 预检
+    try {
+      const resp = await standUpSeat({ seatID: heroSeatId.value, roomId: tgt.roomId, confirmFine })
+      if (resp.needConfirm) {
+        fineConfirm.value = { show: true, fine: resp.fine || 0, msg: resp.msg || '', action: 'leave' }
+        return
+      }
+      if (resp.pending) {
+        errMsg.value = resp.msg || '本手结束后自动站起,请稍后退出'
+        return
+      }
+    } catch (e) { void e }
+    heroSeatId.value = -1
+  }
   stopSim()
   winTimer && clearTimeout(winTimer); winTimer = null
   closeInsurance()
   stopGraceCountdown()
   statsPanel.value.show = false
   fineConfirm.value.show = false
-  const tgt = game.enterTarget
-  if (spectating.value && tgt && heroSeatId.value >= 0) {
-    try {
-      await leaveRoomSeat({ seatID: heroSeatId.value, roomId: tgt.roomId })
-    } catch (e) { void e }
-    heroSeatId.value = -1
-  }
   if (spectating.value) { leaveRoom(); game.clearEnterTarget(); spectating.value = false }
   router.push('/hall')
 }
@@ -1636,7 +1748,7 @@ if (import.meta.env.DEV) {
         @sit="onSeatTap(s.nodeId)"
       />
 
-      <TableTopMenu @open-menu="showMenu = true" />
+      <TableTopMenu @open-menu="showMenu = true" @review="onOpenHandReview()" />
       <TableBottomMenu @menu="onBottomMenu" />
 
       <!-- in-turn action bar (#5) + pre-action bar (#6) -->
@@ -1833,30 +1945,15 @@ if (import.meta.env.DEV) {
         :in-grace="myGrace.active"
         :is-creator="isRoomCreator"
         @close="showMenu = false"
+        @add-chips="onMenuAddChips"
+        @hand-tip="onOpenHandTip"
         @settings="onOpenSettings"
+        @gift="onOpenGift"
         @stand-up-spectate="onStandUpSpectate()"
         @seat-reserve="onSeatReserveLeave"
         @seat-resume="onSeatReserveResume"
-        @stats="onOpenStats"
-        @gift="onOpenGift"
         @dismiss="onDismissRoom"
         @leave-room="onLeaveRoom"
-        @rotate-test="onOpenRotateTest"
-        @deal-test="onOpenDealTest"
-        @countdown-test="onOpenCountdownTest"
-        @community-test="onOpenCommunityTest"
-        @win-test="onOpenWinTest"
-        @bet-test="onOpenBetTest"
-        @blind-test="onOpenBlindTest"
-        @action-test="onOpenActionTest"
-        @fold-test="onOpenFoldTest"
-        @showdown-test="onOpenShowdownTest"
-        @gift-test="onOpenGiftTest"
-        @allin-test="onOpenAllinTest"
-        @clear-test="onOpenClearTest"
-        @sim-test="onOpenSimTest"
-        @clear="onClearSeats"
-        @leave="onLeave"
       />
       <TableSettingDialog
         :show="showSettings"
@@ -1865,6 +1962,27 @@ if (import.meta.env.DEV) {
         @close="showSettings = false"
         @select="selectBg"
       />
+      <TableHandTipDialog :show="showHandTip" @close="showHandTip = false" />
+      <TableHandReviewDialog
+        :show="handReview.show"
+        :loading="handReview.loading"
+        :data="handReview.data"
+        @close="handReview.show = false"
+        @nav="onOpenHandReview"
+      />
+
+      <!-- 看下一张(对齐老德州148):弃牌提前结束的结算窗口出现,一人付费全桌可见 -->
+      <button v-if="rabbitBtn.show" class="rabbit-btn" @click="onNextCard">
+        看下一张<i v-if="rabbitBtn.cost > 0">{{ formatKNotation(rabbitBtn.cost) }}积分</i>
+      </button>
+
+      <!-- 秀牌(对齐老德州43):结算窗口自己的牌没亮时,可选亮左/右/两张 -->
+      <div v-if="showCardsBtn" class="showcards-bar">
+        <span class="sc-label">秀牌</span>
+        <button class="sc-btn" @click="onShowCards(1)">左</button>
+        <button class="sc-btn" @click="onShowCards(2)">右</button>
+        <button class="sc-btn" @click="onShowCards(3)">双</button>
+      </div>
       <TableDealTestDialog
         :show="showDealTest"
         @close="showDealTest = false"
@@ -2514,6 +2632,56 @@ if (import.meta.env.DEV) {
   text-align: center;
   margin-bottom: calc(24px * var(--s));
 }
+/* 看下一张按钮:结算期悬浮在公共牌下方,风格同桌面主按钮 */
+.rabbit-btn {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  transform: translateX(-50%);
+  z-index: 45;
+  border: 1px solid rgba(92, 224, 192, 0.5);
+  border-radius: calc(30px * var(--s));
+  background: rgba(0, 0, 0, 0.6);
+  color: #5ce0c0;
+  font-size: calc(30px * var(--s));
+  padding: calc(12px * var(--s)) calc(32px * var(--s));
+  cursor: pointer;
+}
+.rabbit-btn i {
+  font-style: normal;
+  margin-left: calc(10px * var(--s));
+  font-size: calc(24px * var(--s));
+  color: #ffd76a;
+  font-family: 'PKW-Chip', 'Microsoft YaHei', sans-serif;
+}
+/* 秀牌按钮组:结算期贴自己手牌上方 */
+.showcards-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--sab, 0px) + 330px * var(--s));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--s));
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(92, 224, 192, 0.4);
+  border-radius: calc(28px * var(--s));
+  padding: calc(8px * var(--s)) calc(18px * var(--s));
+}
+.sc-label {
+  color: #9fb5ab;
+  font-size: calc(26px * var(--s));
+}
+.sc-btn {
+  border: none;
+  border-radius: calc(18px * var(--s));
+  background: rgba(92, 224, 192, 0.18);
+  color: #5ce0c0;
+  font-size: calc(26px * var(--s));
+  padding: calc(6px * var(--s)) calc(20px * var(--s));
+  cursor: pointer;
+}
 .countdown {
   color: #5ce0c0;
   font-family: 'PKW-Chip', monospace;
@@ -2720,8 +2888,8 @@ if (import.meta.env.DEV) {
   flex: 1;
   text-align: right;
 }
-.c-num.win { color: #6cd08c; }
-.c-num.lose { color: #ff8a8a; }
+.c-num.win, .c-md.win { color: #6cd08c; }
+.c-num.lose, .c-md.lose { color: #ff8a8a; }
 .stats-close {
   display: block;
   width: 100%;

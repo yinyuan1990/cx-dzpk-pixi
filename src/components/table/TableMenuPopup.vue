@@ -1,7 +1,9 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 
-// openBtn menu (top-left). Entries: table settings / stand up spectate / leave room / dev tests.
+// openBtn menu (top-left,对齐扯旋牌局菜单):
+//   补充积分 / 牌型提示(开关) / 牌局设置 / 赠送积分 / 站起围观 / 留桌离桌(或回座) / 解散(创建者) / 退出房间。
+//   测试按钮已全部移除(调试走桌面右上角虫子图标)。
 defineProps({
   show: { type: Boolean, default: false },
   spectating: { type: Boolean, default: false },
@@ -11,30 +13,15 @@ defineProps({
 })
 defineEmits([
   'close',
+  'add-chips',
+  'hand-tip',
   'settings',
+  'gift',
   'stand-up-spectate',
   'seat-reserve',
   'seat-resume',
-  'stats',
-  'gift',
   'dismiss',
   'leave-room',
-  'clear',
-  'leave',
-  'rotate-test',
-  'deal-test',
-  'countdown-test',
-  'win-test',
-  'community-test',
-  'bet-test',
-  'blind-test',
-  'action-test',
-  'fold-test',
-  'showdown-test',
-  'gift-test',
-  'allin-test',
-  'clear-test',
-  'sim-test',
 ])
 const { t } = useI18n()
 </script>
@@ -43,79 +30,32 @@ const { t } = useI18n()
   <transition name="fade">
     <div v-if="show" class="menu-mask" @click.self="$emit('close')">
       <div class="menu-sheet">
+        <button v-if="seated" class="menu-row hi" @click="$emit('add-chips')">
+          <span class="mr-icon">🪙</span>补充积分
+        </button>
+        <button class="menu-row" @click="$emit('hand-tip')">
+          <span class="mr-icon">💡</span>牌型提示
+        </button>
         <button class="menu-row" @click="$emit('settings')">
           <span class="mr-icon">⚙</span>{{ t('table.settings') }}
         </button>
-        <template v-if="spectating">
-          <button v-if="seated" class="menu-row hi" @click="$emit('stand-up-spectate')">
-            <span class="mr-icon">🪑</span>{{ t('table.standUpSpectate') }}
-          </button>
-          <button v-if="seated && !inGrace" class="menu-row" @click="$emit('seat-reserve')">
-            <span class="mr-icon">🌴</span>{{ t('table.seatReserve') }}
-          </button>
-          <button v-if="seated && inGrace" class="menu-row hi" @click="$emit('seat-resume')">
-            <span class="mr-icon">▶</span>{{ t('table.seatResume') }}
-          </button>
-          <button class="menu-row" @click="$emit('stats')">
-            <span class="mr-icon">📊</span>{{ t('table.realtimeStats') }}
-          </button>
-          <button v-if="seated" class="menu-row" @click="$emit('gift')">
-            <span class="mr-icon">🎁</span>{{ t('table.sendGift') }}
-          </button>
-          <button v-if="isCreator" class="menu-row danger" @click="$emit('dismiss')">
-            <span class="mr-icon">🗑</span>{{ t('table.dismissRoom') }}
-          </button>
-          <button class="menu-row danger" data-sound="back" @click="$emit('leave-room')">
-            <span class="mr-icon">⎋</span>{{ t('table.leaveRoom') }}
-          </button>
-        </template>
-        <button class="menu-row hi" @click="$emit('sim-test')">
-          <span class="mr-icon">🎬</span>{{ t('table.simTest') }}
+        <button v-if="seated" class="menu-row" @click="$emit('gift')">
+          <span class="mr-icon">🎁</span>赠送积分
         </button>
-        <button class="menu-row" @click="$emit('rotate-test')">
-          <span class="mr-icon">🔄</span>{{ t('table.rotateTest') }}
+        <button v-if="seated" class="menu-row" @click="$emit('stand-up-spectate')">
+          <span class="mr-icon">🪑</span>{{ t('table.standUpSpectate') }}
         </button>
-        <button class="menu-row" @click="$emit('deal-test')">
-          <span class="mr-icon">🂠</span>{{ t('table.dealTest') }}
+        <button v-if="seated && !inGrace" class="menu-row" @click="$emit('seat-reserve')">
+          <span class="mr-icon">🌴</span>{{ t('table.seatReserve') }}
         </button>
-        <button class="menu-row" @click="$emit('countdown-test')">
-          <span class="mr-icon">⏱</span>{{ t('table.countdownTest') }}
+        <button v-if="seated && inGrace" class="menu-row hi" @click="$emit('seat-resume')">
+          <span class="mr-icon">▶</span>{{ t('table.seatResume') }}
         </button>
-        <button class="menu-row" @click="$emit('community-test')">
-          <span class="mr-icon">🃏</span>{{ t('table.communityTest') }}
+        <button v-if="isCreator" class="menu-row danger" @click="$emit('dismiss')">
+          <span class="mr-icon">🗑</span>{{ t('table.dismissRoom') }}
         </button>
-        <button class="menu-row" @click="$emit('win-test')">
-          <span class="mr-icon">🏆</span>{{ t('table.winTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('bet-test')">
-          <span class="mr-icon">🪙</span>{{ t('table.betTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('blind-test')">
-          <span class="mr-icon">🅓</span>{{ t('table.blindTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('action-test')">
-          <span class="mr-icon">🎛</span>{{ t('table.actionTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('fold-test')">
-          <span class="mr-icon">🚮</span>{{ t('table.foldTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('showdown-test')">
-          <span class="mr-icon">🎴</span>{{ t('table.showdownTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('gift-test')">
-          <span class="mr-icon">🌹</span>{{ t('table.giftTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('allin-test')">
-          <span class="mr-icon">🔥</span>{{ t('table.allinTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('clear-test')">
-          <span class="mr-icon">🧹</span>{{ t('table.clearTest') }}
-        </button>
-        <button class="menu-row" @click="$emit('clear')">
-          <span class="mr-icon">↺</span>{{ t('table.clearSeats') }}
-        </button>
-        <button v-if="!spectating" class="menu-row danger" data-sound="back" @click="$emit('leave')">
-          <span class="mr-icon">⎋</span>{{ t('table.leave') }}
+        <button class="menu-row danger" data-sound="back" @click="$emit('leave-room')">
+          <span class="mr-icon">⎋</span>{{ t('table.leaveRoom') }}
         </button>
       </div>
     </div>
