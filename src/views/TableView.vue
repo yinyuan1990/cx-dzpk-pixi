@@ -1370,7 +1370,7 @@ async function onOpenStats() {
   showMenu.value = false
   const tgt = game.enterTarget
   if (!tgt) return
-  statsPanel.value = { show: true, loading: true, players: [], viewers: [], settleTimeMins: 0, totalBringIn: 0, totalStack: 0, createdAtMs: 0 }
+  statsPanel.value = { show: true, loading: true, players: [], viewers: [], settleTimeMins: 0, totalBringIn: 0, totalStack: 0, gameStartMs: 0 }
   try {
     const d = await realtimeStatsFlow(tgt.roomId)
     statsPanel.value = {
@@ -1380,7 +1380,8 @@ async function onOpenStats() {
       settleTimeMins: (d.room && d.room.settleTimeMins) || 0,
       totalBringIn: (d.room && d.room.totalBringIn) || 0,
       totalStack: (d.room && d.room.totalStack) || 0,
-      createdAtMs: (d.room && d.room.createdAtMs) || 0,
+      // 对局时长起点=本段第一手开局;0=还没开过局 → 隐藏计时(对齐扯旋 lastGameTime)
+      gameStartMs: (d.room && d.room.gameStartMs) || 0,
     }
     // 面板打开期间:各玩家周期倒计时本地递减 + 底部对局时长走秒
     clearInterval(statsTick)
@@ -1389,10 +1390,13 @@ async function onOpenStats() {
       for (const p of statsPanel.value.players) {
         if (p.remainingSecs > 0 && !p.awaitingBuyin && !p.sittingOut) p.remainingSecs--
       }
-      const ms = statsPanel.value.createdAtMs ? Date.now() - statsPanel.value.createdAtMs : 0
-      const ts = Math.max(0, Math.floor(ms / 1000))
-      const p2 = (n) => String(n).padStart(2, '0')
-      gameDuration.value = `${p2(Math.floor(ts / 3600))}:${p2(Math.floor((ts % 3600) / 60))}:${p2(ts % 60)}`
+      if (statsPanel.value.gameStartMs > 0) {
+        const ts = Math.max(0, Math.floor((Date.now() - statsPanel.value.gameStartMs) / 1000))
+        const p2 = (n) => String(n).padStart(2, '0')
+        gameDuration.value = `${p2(Math.floor(ts / 3600))}:${p2(Math.floor((ts % 3600) / 60))}:${p2(ts % 60)}`
+      } else {
+        gameDuration.value = ''
+      }
     }
     tick()
     statsTick = setInterval(tick, 1000)
@@ -1718,6 +1722,7 @@ if (import.meta.env.DEV) {
             <div class="stats-head">
               <span class="c-player">玩家</span><span class="c-sm">手数</span><span class="c-sm">时间</span><span class="c-md">带入</span><span class="c-md">输赢</span>
             </div>
+            <!-- 玩家列表区(占上方固定比例,独立滚动) -->
             <div class="stats-scroll">
               <div v-for="p in statsPanel.players" :key="p.userId" class="stats-row">
                 <span class="c-player">
@@ -1738,19 +1743,23 @@ if (import.meta.env.DEV) {
                 </span>
               </div>
               <div v-if="!statsPanel.players.length" class="stats-loading">暂无在座玩家</div>
-
-              <!-- 围观人员(对齐扯旋 viewers 网格) -->
-              <div class="viewers-title">围观人员 ({{ statsPanel.viewers.length }})</div>
-              <div v-if="statsPanel.viewers.length" class="viewers-grid">
-                <div v-for="v in statsPanel.viewers" :key="v.userId" class="viewer">
-                  <img v-if="v.avatar" :src="v.avatar" class="vw-av" />
-                  <span v-else class="vw-av vw-av-txt">{{ (v.nickname || '?')[0] }}</span>
-                  <span class="vw-nick">{{ v.nickname }}</span>
-                </div>
-              </div>
-              <div v-else class="stats-loading small">暂无围观</div>
             </div>
-            <div class="stats-duration">对局时长 {{ gameDuration }}</div>
+
+            <!-- 围观人员区(底部固定比例,独立滚动;对齐扯旋 viewers 网格) -->
+            <div class="viewers-area">
+              <div class="viewers-title">围观人员 ({{ statsPanel.viewers.length }})</div>
+              <div class="viewers-scroll">
+                <div v-if="statsPanel.viewers.length" class="viewers-grid">
+                  <div v-for="v in statsPanel.viewers" :key="v.userId" class="viewer">
+                    <img v-if="v.avatar" :src="v.avatar" class="vw-av" />
+                    <span v-else class="vw-av vw-av-txt">{{ (v.nickname || '?')[0] }}</span>
+                    <span class="vw-nick">{{ v.nickname }}</span>
+                  </div>
+                </div>
+                <div v-else class="stats-loading small">暂无围观</div>
+              </div>
+            </div>
+            <div v-if="gameDuration" class="stats-duration">对局时长 {{ gameDuration }}</div>
           </template>
         </div>
       </div>
@@ -2547,7 +2556,21 @@ if (import.meta.env.DEV) {
   color: #ffd76a;
   margin-left: calc(8px * var(--s));
 }
+/* 玩家列表:围观区 ≈ 3:1 固定比例(对齐扯旋排版),各自独立滚动 */
 .stats-scroll {
+  flex: 3;
+  overflow-y: auto;
+  min-height: 0;
+}
+.viewers-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: calc(12px * var(--s));
+}
+.viewers-scroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
@@ -2600,9 +2623,7 @@ if (import.meta.env.DEV) {
   color: #88a89c;
 }
 .viewers-title {
-  margin-top: calc(24px * var(--s));
-  padding-top: calc(16px * var(--s));
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding: calc(14px * var(--s)) 0 calc(4px * var(--s));
   color: #cfe0d6;
   font-size: calc(28px * var(--s));
   font-weight: 600;
