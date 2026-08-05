@@ -16,27 +16,18 @@ const props = defineProps({
 defineEmits(['center-click'])
 const { t } = useI18n()
 
-// 缎带数字跳动：底池累计时数字从旧值滚动到新值 + 一次弹缩(pop)。
+// 缎带数字：直接显示新值(不做"从小数滚到大数"的数值动画),只弹缩一下提示变化。
 const potDisplay = ref(0)
 const potPop = ref(false)
-let rollRaf = 0
+let popTimer = 0
 watch(
   () => props.pot,
-  (to, from) => {
-    cancelAnimationFrame(rollRaf)
-    const start = from || 0
-    const t0 = performance.now()
-    const dur = 450
+  (to) => {
+    potDisplay.value = to
+    clearTimeout(popTimer)
     potPop.value = false
     requestAnimationFrame(() => (potPop.value = true))
-    const step = (now) => {
-      const k = Math.min(1, (now - t0) / dur)
-      const e = 1 - Math.pow(1 - k, 3) // easeOutCubic
-      potDisplay.value = Math.round(start + (to - start) * e)
-      if (k < 1) rollRaf = requestAnimationFrame(step)
-      else setTimeout(() => (potPop.value = false), 160)
-    }
-    rollRaf = requestAnimationFrame(step)
+    popTimer = setTimeout(() => (potPop.value = false), 220)
   },
 )
 // 底池数字格式化 = WPK FormatKNotation（113k / 12.6k / 88k …），与 Holdem 真机一致。

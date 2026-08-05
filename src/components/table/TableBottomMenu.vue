@@ -1,11 +1,13 @@
 <script setup>
 // bottomMenu (1080x101, bottom-aligned): score / chat / mic / emoji at real x coords.
+// score=实时战绩(已接),其余待接玩法。
 const BUTTONS = [
   { key: 'score', icon: '/assets/table/btn_score.png', x: -456, size: 64 },
   { key: 'chat', icon: '/assets/table/btn_chat.png', x: -245, size: 80 },
   { key: 'speak', icon: '/assets/table/btn_speak.png', x: 245, size: 64 },
   { key: 'emoji', icon: '/assets/table/btn_emoji.png', x: 460, size: 64 },
 ]
+defineEmits(['menu'])
 </script>
 
 <template>
@@ -15,6 +17,7 @@ const BUTTONS = [
       :key="b.key"
       class="bm-btn"
       :style="{ '--bx': b.x }"
+      @click="$emit('menu', b.key)"
     >
       <img :style="{ width: `calc(${b.size}px * var(--s))`, height: `calc(${b.size}px * var(--s))` }" :src="b.icon" alt="" />
     </button>

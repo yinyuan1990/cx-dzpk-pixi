@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import PixiStage from '../components/PixiStage.vue'
@@ -1361,19 +1361,44 @@ async function onSeatReserveResume() {
   try { await seatReserveResume(tgt.roomId) } catch (e) { errMsg.value = e.message || '回座失败' }
 }
 
-// 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏
+// 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏 + 各自周期结算倒计时
+//   (循环玩法:周期按每个玩家自己的累计游戏时间独立计,后端下发 remainingSecs)
+let statsTick = null
 async function onOpenStats() {
   showMenu.value = false
   const tgt = game.enterTarget
   if (!tgt) return
-  statsPanel.value = { show: true, loading: true, players: [] }
+  statsPanel.value = { show: true, loading: true, players: [], settleTimeMins: 0 }
   try {
     const d = await realtimeStatsFlow(tgt.roomId)
-    statsPanel.value = { show: true, loading: false, players: (d.players || []).sort((a, b) => b.profit - a.profit) }
+    statsPanel.value = {
+      show: true, loading: false,
+      players: (d.players || []).sort((a, b) => b.profit - a.profit),
+      settleTimeMins: (d.room && d.room.settleTimeMins) || 0,
+    }
+    // 面板打开期间倒计时本地每秒递减(打牌中的玩家在走表;等待/暂离的由下次拉取校正)
+    clearInterval(statsTick)
+    statsTick = setInterval(() => {
+      if (!statsPanel.value.show) { clearInterval(statsTick); return }
+      for (const p of statsPanel.value.players) {
+        if (p.remainingSecs > 0 && !p.awaitingBuyin && !p.sittingOut) p.remainingSecs--
+      }
+    }, 1000)
   } catch (e) {
     statsPanel.value.show = false
     errMsg.value = e.message || '获取战绩失败'
   }
+}
+function fmtRemain(secs) {
+  if (secs == null) return '—'
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+onBeforeUnmount(() => clearInterval(statsTick))
+// 底部菜单栏:score=实时战绩;chat/speak/emoji 待接
+function onBottomMenu(key) {
+  if (key === 'score') onOpenStats()
 }
 
 // 送礼(对齐扯旋161):列表来自后端 dz_gift_config,目标=其他在座玩家
@@ -1596,7 +1621,7 @@ if (import.meta.env.DEV) {
       />
 
       <TableTopMenu @open-menu="showMenu = true" />
-      <TableBottomMenu />
+      <TableBottomMenu @menu="onBottomMenu" />
 
       <!-- in-turn action bar (#5) + pre-action bar (#6) -->
       <TableActionBar
@@ -1668,14 +1693,14 @@ if (import.meta.env.DEV) {
         </div>
       </div>
 
-      <!-- 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏排行 -->
+      <!-- 实时战绩(对齐扯旋109):本周期各玩家带入/盈亏排行 + 各自周期结算倒计时 -->
       <div v-if="statsPanel.show" class="stats-mask" @click.self="statsPanel.show = false">
         <div class="stats-box">
-          <div class="stats-title">实时战绩</div>
+          <div class="stats-title">实时战绩<span v-if="statsPanel.settleTimeMins" class="stats-sub">{{ statsPanel.settleTimeMins }}分钟/周期 · 每人独立计时</span></div>
           <div v-if="statsPanel.loading" class="stats-loading">加载中…</div>
           <template v-else>
             <div class="stats-head">
-              <span class="c-name">玩家</span><span class="c-num">带入</span><span class="c-num">当前</span><span class="c-num">盈亏</span>
+              <span class="c-name">玩家</span><span class="c-num">带入</span><span class="c-num">当前</span><span class="c-num">盈亏</span><span v-if="statsPanel.settleTimeMins" class="c-num">周期剩余</span>
             </div>
             <div v-for="p in statsPanel.players" :key="p.userId" class="stats-row">
               <span class="c-name">{{ p.nickname }}{{ p.userId === game.user.userId ? '(我)' : '' }}</span>
@@ -1683,6 +1708,9 @@ if (import.meta.env.DEV) {
               <span class="c-num">{{ formatKNotation(p.stack) }}</span>
               <span class="c-num" :class="{ win: p.profit > 0, lose: p.profit < 0 }">
                 {{ p.profit > 0 ? '+' : '' }}{{ formatKNotation(p.profit) }}
+              </span>
+              <span v-if="statsPanel.settleTimeMins" class="c-num countdown" :class="{ soon: p.remainingSecs != null && p.remainingSecs < 300 }">
+                {{ p.awaitingBuyin ? '待补入' : fmtRemain(p.remainingSecs) }}
               </span>
             </div>
             <div v-if="!statsPanel.players.length" class="stats-loading">暂无在座玩家</div>
@@ -2440,6 +2468,20 @@ if (import.meta.env.DEV) {
   color: #ffd76a;
   text-align: center;
   margin-bottom: calc(24px * var(--s));
+}
+.stats-sub {
+  display: block;
+  font-size: calc(24px * var(--s));
+  font-weight: 400;
+  color: #9fb0c0;
+  margin-top: calc(6px * var(--s));
+}
+.countdown {
+  color: #5ce0c0;
+  font-family: monospace;
+}
+.countdown.soon {
+  color: #ffb14d;
 }
 .stats-loading {
   text-align: center;
