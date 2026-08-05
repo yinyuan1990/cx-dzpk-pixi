@@ -2516,16 +2516,24 @@ if (import.meta.env.DEV) {
 }
 .countdown {
   color: #5ce0c0;
-  font-family: monospace;
+  font-family: 'PKW-Chip', monospace;
 }
 .countdown.soon {
   color: #ffb14d;
+}
+/* 数字列统一用牌桌筹码字体 */
+.stats-row .c-md {
+  font-family: 'PKW-Chip', 'Microsoft YaHei', sans-serif;
+}
+.stats-row .c-sm {
+  font-family: 'PKW-Chip', 'Microsoft YaHei', sans-serif;
 }
 
 /* 实时战绩左侧侧滑(对齐扯旋 CHEXUANPlayerList) */
 .stats-mask.side {
   justify-content: flex-start;
   align-items: stretch;
+  background: rgba(0, 0, 0, 0.2); /* 右侧留视野,遮罩轻一点 */
 }
 .stats-side {
   width: calc(760px * var(--s));
@@ -2533,8 +2541,9 @@ if (import.meta.env.DEV) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 32, 24, 0.96);
-  border-right: 1px solid rgba(92, 224, 192, 0.25);
+  /* 对齐扯旋:面板 = 半透明黑 alpha 阴影,透出牌桌底色 */
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
   padding: calc(30px * var(--s) + var(--sat, 0px)) calc(20px * var(--s)) calc(20px * var(--s) + var(--sab, 0px));
   animation: statsSlideIn 0.25s ease-out;
 }
@@ -2542,19 +2551,24 @@ if (import.meta.env.DEV) {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
+/* 汇总条(对齐扯旋 topGroup):深色横带,标签浅灰 + 数字白色大字(牌桌字体) */
 .stats-total {
   display: flex;
-  justify-content: space-around;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: calc(12px * var(--s));
-  padding: calc(14px * var(--s)) 0;
-  margin-bottom: calc(10px * var(--s));
-  font-size: calc(28px * var(--s));
-  color: #cfe0d6;
+  align-items: center;
+  justify-content: space-evenly;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: calc(10px * var(--s));
+  padding: calc(16px * var(--s)) 0;
+  margin-bottom: calc(12px * var(--s));
+  font-size: calc(26px * var(--s));
+  color: #9fb5ab;
 }
 .stats-total b {
-  color: #ffd76a;
-  margin-left: calc(8px * var(--s));
+  font-family: 'PKW-Chip', 'Microsoft YaHei', sans-serif;
+  font-weight: 400;
+  font-size: calc(38px * var(--s));
+  color: #ffffff;
+  margin-left: calc(12px * var(--s));
 }
 /* 玩家列表:围观区 ≈ 3:1 固定比例(对齐扯旋排版),各自独立滚动 */
 .stats-scroll {
@@ -2671,7 +2685,7 @@ if (import.meta.env.DEV) {
   padding-top: calc(16px * var(--s));
   color: #cfe0d6;
   font-size: calc(28px * var(--s));
-  font-family: monospace;
+  font-family: 'PKW-Chip', monospace;
 }
 .stats-loading {
   text-align: center;
