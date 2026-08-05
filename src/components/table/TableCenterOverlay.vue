@@ -71,8 +71,9 @@ const fmt = (n) => formatKNotation(n)
     {{ centerLabel }}
   </button>
 
-  <!-- roomInfo(0,-88): blinds/roomNum/duration row + multiline info -->
-  <div class="t-node roomInfo" :style="{ '--cx': toCx(0), '--cy': toCy(-88) }">
+  <!-- roomInfo(0,-88): blinds/roomNum/duration row + multiline info
+       对局中(公共牌已发)隐藏,否则与桌面五张公共牌重叠 -->
+  <div v-if="!boardActive" class="t-node roomInfo" :style="{ '--cx': toCx(0), '--cy': toCy(-88) }">
     <div class="ri-iconrow">
       <span class="ri-item"><img class="ic ic32" src="/assets/table/bet_step.png" alt="" />{{ room.blinds }}</span>
       <span class="ri-item"><img class="ic ic32" src="/assets/table/room_num.png" alt="" />{{ room.roomNum }}</span>
